@@ -1,0 +1,3 @@
+# Railgun
+
+Railgun is a functional programming language that compiles to C/CUDA. Map and filter operations are automatically parallelized via CUDA.

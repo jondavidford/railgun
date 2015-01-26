@@ -1,15 +1,73 @@
 #lang racket
+(define header #<<--
+#include <stdio.h>
 
-(provide compile)
+class Managed {
+public:
+  void *operator new(size_t len) {
+    void *ptr;
+    cudaMallocManaged(&ptr, len);
+    return ptr;
+  }
 
-; ################
-;;;;;;;;;;;;;;;;;;
-;     PARSER
-;;;;;;;;;;;;;;;;;;
-; ################
+  void operator delete(void *ptr) {
+    cudaFree(ptr);
+  }
+};
 
-(define (parse program)
-  (map parse-exp program))
+template<typename T>
+struct Collection
+{
+    T* elements;
+    int count;
+};
+
+void print(int variable)
+{
+    printf("Output: %d", variable);
+}
+--
+  )
+
+(define main #<<--
+int main()
+{
+--
+  )
+
+(define footer #<<--
+
+}
+--
+  )
+
+(define program `(define (func a b) (-> int int int) (if (= a 0)
+                                                         (if (= a 0)
+                                                         (func (- a 1) (+ b 1))
+                                                         b)
+                                                         (if (= a 0)
+                                                         (func (- a 1) (+ b 1))
+                                                         b))))
+
+(define line `(define (func a)
+                (-> int int)
+                (define x int (+ 1 a))
+                (define y int (* 5 a))
+                (- y x)))
+
+(define (convert-type type)
+  (cond
+    [(list? type) (format "Collection<~a>" (convert-type (first type)))]
+    [else (symbol->string type)]))
+
+(define (return-parse expr)
+  (match expr
+    [`(if ,pred ,then ,else)
+     `(if ,pred
+              ,(return-parse then)
+              ,(return-parse else))]
+    [else
+     `(return ,expr)]))
 
 ; adds "return" and "line" expressions, making compiling much easier
 (define (parse-exp expr)
@@ -23,61 +81,12 @@
         ,(return-parse (last body)))]
     [else `(line ,expr)]))
 
-;; PARSER HELPER FUNCTIONS ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (return-parse expr)
-  (match expr
-    [`(if ,pred ,then ,else)
-     `(if ,pred
-              ,(return-parse then)
-              ,(return-parse else))]
-    [else
-     `(return ,expr)]))
-
-; ################
-;;;;;;;;;;;;;;;;;;
-;    COMPILER
-;;;;;;;;;;;;;;;;;;
-; ################
-
-(define (compile program)
-  (define compiled-program (apply string-append (map compile-exp (parse program))))
-  (format #<<--
-#include <stdio.h>
-
-template<typename T>
-struct Collection
-{
-    T* elements;
-    int count;
-};
-
-void print(int variable)
-{
-    printf("%d\n", variable);
-}
-
-~a
-
-int main()
-{
-~a
-}
---
-    functions
-    compiled-program))
-
-(define functions "")
-
 (define (compile-exp expr)
   (match expr
     [`(line ,exp)
      (format "~a;\n" (compile-exp exp))]
     [`(return ,exp)
      (format "return ~a;\n" (compile-exp exp))]
-    [`(print ,exp)
-     (format "print(~a)" (compile-exp exp))]
     ;check for distinct argument names
     [`(define (,func ,args ...)
         ;contract list length is args list length plus one
@@ -101,14 +110,13 @@ int main()
                   (map compile-exp (take body (sub1 (length body)))))))
      (define return
        (compile-exp (last body)))
-     (set! functions (string-append functions (format #<<--
+     (format #<<--
 ~a ~a(~a){
     ~a
     ~a
 }
 --
-             (last c-contract) func arguments compiled-body return)))
-             ""]
+             (last c-contract) func arguments compiled-body return)]
     [`(define ,type ,var ,expr)
      (format "~a ~a = ~a" (convert-type type) var (compile-exp expr))]
     [`(if ,pred ,then ,else)
@@ -144,7 +152,7 @@ if(~a) {
      (define infix 
        (apply string-append
               (map (λ (x) (format "~a ~a " x op))
-                   (map compile-exp operands))))
+                   operands)))
      (format "(~a)" (substring infix 0 (- (string-length infix) 3)))]
     [`(,func ,operands ...)
      (define arg-string
@@ -158,31 +166,4 @@ if(~a) {
     [x
      (format "~a" x)]))
 
-;; COMPILER HELPER FUNCTIONS ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (convert-type type)
-  (cond
-    [(list? type) (format "Collection<~a>" (convert-type (first type)))]
-    [else (symbol->string type)]))
-
-; ##################
-;;;;;;;;;;;;;;;;;;;;
-;      TESTS
-;;;;;;;;;;;;;;;;;;;;
-; ##################
-
-(define program `((define (func a b) (-> int int int) (if (= a 0)
-                                                         (if (= a 0)
-                                                         (func (- a 1) (+ b 1))
-                                                         b)
-                                                         (if (= a 0)
-                                                         (func (- a 1) (+ b 1))
-                                                         b)))
-                  (print (func 5 4))))
-
-(define line `(define (func a)
-                (-> int int)
-                (define x int (+ 1 a))
-                (define y int (* 5 a))
-                (- y x)))

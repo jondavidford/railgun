@@ -42,48 +42,51 @@ int main()
   )
 
 (define program `(define (func a b) (-> int int int) (if (= a 0)
+                                                         (if (= a 0)
                                                          (func (- a 1) (+ b 1))
-                                                         b)))
+                                                         b)
+                                                         (if (= a 0)
+                                                         (func (- a 1) (+ b 1))
+                                                         b))))
+
+(define line `(define (func a)
+                (-> int int)
+                (define x int (+ 1 a))
+                (define y int (* 5 a))
+                (- y x)))
 
 (define (convert-type type)
   (cond
     [(list? type) (format "Collection<~a>" (convert-type (first type)))]
     [else (symbol->string type)]))
 
+(define (return-parse expr)
+  (match expr
+    [`(if ,pred ,then ,else)
+     `(if ,pred
+              ,(return-parse then)
+              ,(return-parse else))]
+    [else
+     `(return ,expr)]))
+
 ; adds "return" and "line" expressions, making compiling much easier
-(define (parse-exp expr return?)
+(define (parse-exp expr)
   (match expr
     [`(define (,func ,args ...)
         (-> ,contract ...)
         ,body ...)
      `(define (,func ,@args)
         (-> ,@contract)
-        ,@(map (lambda (x) (parse-exp x #f)) (take body (sub1 (length body))))
-        ,@(parse-exp (last body) #t))]
-    [`(if ,pred ,then ,else)
-     (if return?
-         `(if ,pred
-              ,(if (and (list? then)
-                        (eq? (first then) 'if))
-                   (parse-exp then)
-                   `(return ,then))
-              ,(if (and (list? then)
-                        (eq? (first else) 'if))
-                   (parse-exp else)
-                   `(return ,else)))
-         expr)]
-    [`(cond ,clauses ...)
-     (if return?
-         `(cond
-            ,@(map (lambda (clause)
-                     `[,pred 
-    [else
-     (cond
-       [return? `(return ,expr)]
-       [else expr])]))
+        ,@(map (lambda (x) (parse-exp x)) (take body (sub1 (length body))))
+        ,(return-parse (last body)))]
+    [else `(line ,expr)]))
 
 (define (compile-exp expr)
   (match expr
+    [`(line ,exp)
+     (format "~a;\n" (compile-exp exp))]
+    [`(return ,exp)
+     (format "return ~a;\n" (compile-exp exp))]
     ;check for distinct argument names
     [`(define (,func ,args ...)
         ;contract list length is args list length plus one

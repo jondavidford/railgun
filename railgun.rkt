@@ -1,73 +1,10 @@
 #lang racket
-(define header #<<--
-#include <stdio.h>
 
-class Managed {
-public:
-  void *operator new(size_t len) {
-    void *ptr;
-    cudaMallocManaged(&ptr, len);
-    return ptr;
-  }
-
-  void operator delete(void *ptr) {
-    cudaFree(ptr);
-  }
-};
-
-template<typename T>
-struct Collection
-{
-    T* elements;
-    int count;
-};
-
-void print(int variable)
-{
-    printf("Output: %d", variable);
-}
---
-  )
-
-(define main #<<--
-int main()
-{
---
-  )
-
-(define footer #<<--
-
-}
---
-  )
-
-(define program `(define (func a b) (-> int int int) (if (= a 0)
-                                                         (if (= a 0)
-                                                         (func (- a 1) (+ b 1))
-                                                         b)
-                                                         (if (= a 0)
-                                                         (func (- a 1) (+ b 1))
-                                                         b))))
-
-(define line `(define (func a)
-                (-> int int)
-                (define x int (+ 1 a))
-                (define y int (* 5 a))
-                (- y x)))
-
-(define (convert-type type)
-  (cond
-    [(list? type) (format "Collection<~a>" (convert-type (first type)))]
-    [else (symbol->string type)]))
-
-(define (return-parse expr)
-  (match expr
-    [`(if ,pred ,then ,else)
-     `(if ,pred
-              ,(return-parse then)
-              ,(return-parse else))]
-    [else
-     `(return ,expr)]))
+; ################
+;;;;;;;;;;;;;;;;;;
+;     PARSER
+;;;;;;;;;;;;;;;;;;
+; ################
 
 ; adds "return" and "line" expressions, making compiling much easier
 (define (parse-exp expr)
@@ -81,6 +18,28 @@ int main()
         ,(return-parse (last body)))]
     [else `(line ,expr)]))
 
+;; PARSER HELPER FUNCTIONS ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (return-parse expr)
+  (match expr
+    [`(if ,pred ,then ,else)
+     `(if ,pred
+              ,(return-parse then)
+              ,(return-parse else))]
+    [else
+     `(return ,expr)]))
+
+; ################
+;;;;;;;;;;;;;;;;;;
+;    COMPILER
+;;;;;;;;;;;;;;;;;;
+; ################
+
+(define (compile program)
+  '())
+  
+; compile an expression
 (define (compile-exp expr)
   (match expr
     [`(line ,exp)
@@ -165,5 +124,75 @@ if(~a) {
      (format "~a(~a)" func arguments)]
     [x
      (format "~a" x)]))
+
+(define header #<<--
+#include <stdio.h>
+
+class Managed {
+public:
+  void *operator new(size_t len) {
+    void *ptr;
+    cudaMallocManaged(&ptr, len);
+    return ptr;
+  }
+
+  void operator delete(void *ptr) {
+    cudaFree(ptr);
+  }
+};
+
+template<typename T>
+struct Collection
+{
+    T* elements;
+    int count;
+};
+
+void print(int variable)
+{
+    printf("Output: %d", variable);
+}
+--
+  )
+
+(define main #<<--
+int main()
+{
+--
+  )
+
+(define footer #<<--
+
+}
+--
+  )
+
+;; COMPILER HELPER FUNCTIONS ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (convert-type type)
+  (cond
+    [(list? type) (format "Collection<~a>" (convert-type (first type)))]
+    [else (symbol->string type)]))
+
+; ##################
+;;;;;;;;;;;;;;;;;;;;
+;      TESTS
+;;;;;;;;;;;;;;;;;;;;
+; ##################
+
+(define program `(define (func a b) (-> int int int) (if (= a 0)
+                                                         (if (= a 0)
+                                                         (func (- a 1) (+ b 1))
+                                                         b)
+                                                         (if (= a 0)
+                                                         (func (- a 1) (+ b 1))
+                                                         b))))
+
+(define line `(define (func a)
+                (-> int int)
+                (define x int (+ 1 a))
+                (define y int (* 5 a))
+                (- y x)))
 
 

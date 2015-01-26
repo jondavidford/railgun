@@ -1,45 +1,4 @@
 #lang racket
-(define header #<<--
-#include <stdio.h>
-
-class Managed {
-public:
-  void *operator new(size_t len) {
-    void *ptr;
-    cudaMallocManaged(&ptr, len);
-    return ptr;
-  }
-
-  void operator delete(void *ptr) {
-    cudaFree(ptr);
-  }
-};
-
-template<typename T>
-struct Collection
-{
-    T* elements;
-    int count;
-};
-
-void print(int variable)
-{
-    printf("Output: %d", variable);
-}
---
-  )
-
-(define main #<<--
-int main()
-{
---
-  )
-
-(define footer #<<--
-
-}
---
-  )
 
 (define program `(define (func a b) (-> int int int) (if (= a 0)
                                                          (if (= a 0)
@@ -81,12 +40,58 @@ int main()
         ,(return-parse (last body)))]
     [else `(line ,expr)]))
 
+(define (compile program)
+  (format #<<--
+#include <stdio.h>
+
+class Managed {
+public:
+  void *operator new(size_t len) {
+    void *ptr;
+    cudaMallocManaged(&ptr, len);
+    return ptr;
+  }
+
+  void operator delete(void *ptr) {
+    cudaFree(ptr);
+  }
+};
+
+template<typename T>
+struct Collection
+{
+    T* elements;
+    int count;
+};
+
+void print(int variable)
+{
+    printf("%d", variable);
+}
+
+~a
+
+int main()
+{
+~a
+}
+--
+    functions
+    (map compile-exp program)))
+
+
+(map (compile)))
+
+(define functions "")
+
 (define (compile-exp expr)
   (match expr
     [`(line ,exp)
      (format "~a;\n" (compile-exp exp))]
     [`(return ,exp)
      (format "return ~a;\n" (compile-exp exp))]
+    [`(print ,exp)
+     (format "print(~a)" (compile-exp exp))]
     ;check for distinct argument names
     [`(define (,func ,args ...)
         ;contract list length is args list length plus one
@@ -110,13 +115,14 @@ int main()
                   (map compile-exp (take body (sub1 (length body)))))))
      (define return
        (compile-exp (last body)))
-     (format #<<--
+     (set! functions (string-append functions (format #<<--
 ~a ~a(~a){
     ~a
     ~a
 }
 --
-             (last c-contract) func arguments compiled-body return)]
+             (last c-contract) func arguments compiled-body return)))
+             ""]
     [`(define ,type ,var ,expr)
      (format "~a ~a = ~a" (convert-type type) var (compile-exp expr))]
     [`(if ,pred ,then ,else)

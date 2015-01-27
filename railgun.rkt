@@ -39,8 +39,8 @@
      (error "last expression in body must evaluate to a value: define does not evaluate to a value")]
     [`(if ,pred ,then ,else)
      `(if ,pred
-              ,(return-parse then)
-              ,(return-parse else))]
+          ,(return-parse then)
+          ,(return-parse else))]
     [else
      `(return ,expr)]))
 
@@ -113,7 +113,7 @@ int main()
              (compile-exp op1)
              op
              (compile-exp op2))]
-    [`(cond ,clauses ...)
+    [`(cond (,preds ,bodies ...) ...)
      ""]
     [`(define (,func ,args ...)
         ;contract list length is args list length plus one

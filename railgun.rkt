@@ -14,15 +14,18 @@
 ; adds "return" and "line" expressions, making compiling much easier
 (define (parse-exp expr)
   (match expr
-    [`(cond ,clauses ...)
-     "hi"]
+    [`(cond (,preds ,bodies ...) ...)
+     `(cond
+        ,@(map (lambda (pred body)
+                 `(,pred ,@(parse-body body)))
+               preds
+               bodies))]
     [`(define (,func ,args ...)
         (-> ,contract ...)
         ,body ...)
      `(define (,func ,@args)
         (-> ,@contract)
-        ,@(map parse-exp (take body (sub1 (length body))))
-        ,(return-parse (last body)))]
+        ,@(parse-body body))]
     [else `(line ,expr)]))
 
 ;; PARSER HELPER FUNCTIONS ;;
@@ -32,7 +35,7 @@
   (match expr
     [`(cond ,clauses ...)
      (parse-exp expr)]
-    [`(define ,x)
+    [`(define ,x ...)
      (error "last expression in body must evaluate to a value: define does not evaluate to a value")]
     [`(if ,pred ,then ,else)
      `(if ,pred
@@ -40,6 +43,14 @@
               ,(return-parse else))]
     [else
      `(return ,expr)]))
+
+;; calls parse-exp on first n-1 exprs in body
+;; then calls return-parse on last expr in body
+(define (parse-body body)
+  (if (> (length body) 1)
+      `(,(map parse-exp (take body (sub1 (length body))))
+        ,(return-parse (last body)))
+      `(,(return-parse (first body)))))
 
 ; ################
 ;;;;;;;;;;;;;;;;;;

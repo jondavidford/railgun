@@ -14,12 +14,14 @@
 ; adds "return" and "line" expressions, making compiling much easier
 (define (parse-exp expr)
   (match expr
+    [`(cond ,clauses ...)
+     "hi"]
     [`(define (,func ,args ...)
         (-> ,contract ...)
         ,body ...)
      `(define (,func ,@args)
         (-> ,@contract)
-        ,@(map (lambda (x) (parse-exp x)) (take body (sub1 (length body))))
+        ,@(map parse-exp (take body (sub1 (length body))))
         ,(return-parse (last body)))]
     [else `(line ,expr)]))
 
@@ -28,6 +30,10 @@
 
 (define (return-parse expr)
   (match expr
+    [`(cond ,clauses ...)
+     (parse-exp expr)]
+    [`(define ,x)
+     (error "last expression in body must evaluate to a value: define does not evaluate to a value")]
     [`(if ,pred ,then ,else)
      `(if ,pred
               ,(return-parse then)
@@ -72,13 +78,32 @@ int main()
 
 (define (compile-exp expr)
   (match expr
-    [`(line ,exp)
-     (format "~a;\n" (compile-exp exp))]
-    [`(return ,exp)
-     (format "return ~a;\n" (compile-exp exp))]
-    [`(print ,exp)
-     (format "print(~a)" (compile-exp exp))]
-    ;check for distinct argument names
+    ;use regexes to have "+ or - or * or % ...
+    [(or `(+ ,operands ..2)
+         `(- ,operands ..2)
+         `(* ,operands ..2)
+         `(/ ,operands ..2)
+         `(% ,operands ..2))
+     (define op (first expr))
+     (define infix 
+       (apply string-append
+              (map (λ (x) (format "~a ~a " x op))
+                   (map compile-exp operands))))
+     (format "(~a)" (substring infix 0 (- (string-length infix) 3)))]
+    [(or `(= ,op1 ,op2)
+         `(<= ,op1 ,op2)
+         `(>= ,op1 ,op2)
+         `(< ,op1 ,op2)
+         `(> ,op1 ,op2))
+     (define op (if (eq? (first expr) '=)
+                    '==
+                    (first exp)))
+     (format "(~a ~a ~a)"
+             (compile-exp op1)
+             op
+             (compile-exp op2))]
+    [`(cond ,clauses ...)
+     ""]
     [`(define (,func ,args ...)
         ;contract list length is args list length plus one
         (-> ,contract ...)
@@ -111,6 +136,15 @@ int main()
              ""]
     [`(define ,type ,var ,expr)
      (format "~a ~a = ~a" (convert-type type) var (compile-exp expr))]
+    [`(,func ,operands ...)
+     (define arg-string
+       (apply string-append
+              (map (λ (x) (format "~a, " x))
+                   (map compile-exp operands))))
+     (define arguments
+       (unless (empty? operands)
+         (substring arg-string 0 (- (string-length arg-string) 2))))
+     (format "~a(~a)" func arguments)]
     [`(if ,pred ,then ,else)
      (format #<<--
 if(~a) {
@@ -122,39 +156,13 @@ if(~a) {
       (compile-exp pred)
       (compile-exp then)
       (compile-exp else))]
-    [(or `(= ,op1 ,op2)
-         `(<= ,op1 ,op2)
-         `(>= ,op1 ,op2)
-         `(< ,op1 ,op2)
-         `(> ,op1 ,op2))
-     (define op (if (eq? (first expr) '=)
-                    '==
-                    (first exp)))
-     (format "(~a ~a ~a)"
-             (compile-exp op1)
-             op
-             (compile-exp op2))]
-    ;use regexes to have "+ or - or * or % ...
-    [(or `(+ ,operands ..2)
-         `(- ,operands ..2)
-         `(* ,operands ..2)
-         `(/ ,operands ..2)
-         `(% ,operands ..2))
-     (define op (first expr))
-     (define infix 
-       (apply string-append
-              (map (λ (x) (format "~a ~a " x op))
-                   (map compile-exp operands))))
-     (format "(~a)" (substring infix 0 (- (string-length infix) 3)))]
-    [`(,func ,operands ...)
-     (define arg-string
-       (apply string-append
-              (map (λ (x) (format "~a, " x))
-                   (map compile-exp operands))))
-     (define arguments
-       (unless (empty? operands)
-         (substring arg-string 0 (- (string-length arg-string) 2))))
-     (format "~a(~a)" func arguments)]
+    [`(line ,exp)
+     (format "~a;\n" (compile-exp exp))]
+    [`(print ,exp)
+     (format "print(~a)" (compile-exp exp))]
+    [`(return ,exp)
+     (format "return ~a;\n" (compile-exp exp))]
+    ;check for distinct argument name
     [x
      (format "~a" x)]))
 

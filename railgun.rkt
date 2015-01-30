@@ -48,7 +48,7 @@
 ;; then calls return-parse on last expr in body
 (define (parse-body body)
   (if (> (length body) 1)
-      `(,(map parse-exp (take body (sub1 (length body))))
+      `(,@(map parse-exp (take body (sub1 (length body))))
         ,(return-parse (last body)))
       `(,(return-parse (first body)))))
 
@@ -77,15 +77,19 @@ void print(int variable)
 
 ~a
 
+~a
+
 int main()
 {
 ~a
 }
 --
+    device-functions
     functions
     compiled-program))
 
 (define functions "")
+(define device-functions "")
 
 (define (compile-exp expr)
   (match expr
@@ -133,29 +137,22 @@ int main()
      (define compiled-body
        (if (< (length body) 2)
            ""
-           (apply (lambda (x) (format "~a;\n" x))
+           (apply string-append
                   (map compile-exp (take body (sub1 (length body)))))))
      (define return
        (compile-exp (last body)))
-     (set! functions (string-append functions (format #<<--
+     (define c-function (format #<<--
 ~a ~a(~a){
     ~a
     ~a
 }
 --
-             (last c-contract) func arguments compiled-body return)))
+             (last c-contract) func arguments compiled-body return))
+     (set! functions (string-append functions c-function))
+     (set! device-functions (string-append device-functions (format "__device__ ~a" c-function)))
              ""]
     [`(define ,type ,var ,expr)
      (format "~a ~a = ~a" (convert-type type) var (compile-exp expr))]
-    [`(,func ,operands ...)
-     (define arg-string
-       (apply string-append
-              (map (λ (x) (format "~a, " x))
-                   (map compile-exp operands))))
-     (define arguments
-       (unless (empty? operands)
-         (substring arg-string 0 (- (string-length arg-string) 2))))
-     (format "~a(~a)" func arguments)]
     [`(if ,pred ,then ,else)
      (format #<<--
 if(~a) {
@@ -169,10 +166,41 @@ if(~a) {
       (compile-exp else))]
     [`(line ,exp)
      (format "~a;\n" (compile-exp exp))]
+    [`(map ,func ,collection)
+     (set! functions 
+           (string-append functions
+                          (format #<<--
+__global__ void map~a(Collection<~a>* in, Collection<~a>* out)
+{
+    out[threadIdx.x] = ~a(in[threadIdx.x]);
+}
+--
+                                  func
+                                  (convert-type (first (first collection)))
+                                  (convert-type (first (first collection)))
+                                  func)))
+     (format #<<--
+allocate Collection;
+dim3 dimBlock( ~a->count, 1 );
+dim3 dimGrid( 1, 1 );
+map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
+--
+             collection
+             func
+             collection)]
     [`(print ,exp)
      (format "print(~a)" (compile-exp exp))]
     [`(return ,exp)
      (format "return ~a;\n" (compile-exp exp))]
+    [`(,func ,operands ...)
+     (define arg-string
+       (apply string-append
+              (map (λ (x) (format "~a, " x))
+                   (map compile-exp operands))))
+     (define arguments
+       (unless (empty? operands)
+         (substring arg-string 0 (- (string-length arg-string) 2))))
+     (format "~a(~a)" func arguments)]
     ;check for distinct argument name
     [x
      (format "~a" x)]))
@@ -200,8 +228,19 @@ if(~a) {
                                                          b)))
                   (print (func 5 4))))
 
-(define line `(define (func a)
+(define line `((define (func a)
+                 (-> int int)
+                 (define x int (+ 1 a))
+                 (define y int (* 5 a))
+                 (- y x))))
+
+;;;;;;;;;;;;;;;;;; type parser tests
+
+(map func collection)
+
+(define add '((define (func a) 
                 (-> int int)
-                (define x int (+ 1 a))
-                (define y int (* 5 a))
-                (- y x)))
+                a)
+              (map func ([int] : [1 2 3 4]))))
+
+

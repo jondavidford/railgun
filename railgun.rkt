@@ -1,177 +1,9 @@
 #lang racket
 
+(require "parse.rkt")
+
 (provide compile)
 
-; ################
-;;;;;;;;;;;;;;;;;;
-;     PARSER
-;;;;;;;;;;;;;;;;;;
-; ################
-
-(define (parse program)
-  (map parse-exp program))
-
-(struct deffun (name arguments contract body))
-(struct defvar (name type expr))
-(struct cond (type preds bodies))
-(struct if (type pred then else))
-(struct arith (type op arguments))
-(struct comp (type op arguments))
-(struct funcall (type name arguments))
-(struct map (type fun collection))
-
-(define (parse-type expr)
-  (match expr
-    [(or `(+ ,operands ..2)
-         `(- ,operands ..2)
-         `(* ,operands ..2)
-         `(/ ,operands ..2)
-         `(% ,operands ..2))
-     (define typed-operands (map parse-type operands))
-     (define type (foldl (lambda (x y) (if (or (eq? (arith-type x) 'float)
-                                               (eq? (arith-type y) 'float)
-                                               'float
-                                               'int)))
-                         'int
-                         typed-operands))
-     (arith type (first expr) (map parse-type operands))]
-    [(or `(= ,op1 ,op2)
-         `(<= ,op1 ,op2)
-         `(>= ,op1 ,op2)
-         `(< ,op1 ,op2)
-         `(> ,op1 ,op2))
-     (comp 'bool (first expr) `(,op1 ,op2))]
-    [`(cond (,preds ,bodies ...) ...)
-     (define typed-bodies (map (lambda (body) ((parse-type (last body))) bodies)))
-     void]
-    [`(define (,func ,args ...)
-        ;contract list length is args list length plus one
-        (-> ,contract ...)
-        ,body ...)
-     (define c-contract (map convert-type contract))
-     (define arg-string
-       (unless (empty? args)
-         (apply string-append
-                (map (λ (x y) (format "~a ~a, " x y))
-                     (take c-contract (sub1 (length c-contract)))
-                     (map compile-exp args)))))
-     (define arguments
-       (if (empty? args)
-           ""
-           (substring arg-string 0 (- (string-length arg-string) 2))))
-     (define compiled-body
-       (if (< (length body) 2)
-           ""
-           (apply string-append
-                  (map compile-exp (take body (sub1 (length body)))))))
-     (define return
-       (compile-exp (last body)))
-     (define c-function (format #<<--
-~a ~a(~a){
-    ~a
-    ~a
-}
---
-             (last c-contract) func arguments compiled-body return))
-     (set! functions (string-append functions c-function))
-     (set! device-functions (string-append device-functions (format "__device__ ~a" c-function)))
-             ""]
-    [`(define ,type ,var ,expr)
-     (format "~a ~a = ~a" (convert-type type) var (compile-exp expr))]
-    [`(if ,pred ,then ,else)
-     (format #<<--
-if(~a) {
-    ~a
-} else {
-    ~a
-}
---
-      (compile-exp pred)
-      (compile-exp then)
-      (compile-exp else))]
-    [`(line ,exp)
-     (format "~a;\n" (compile-exp exp))]
-    [`(map ,func ,collection)
-     (set! functions 
-           (string-append functions
-                          (format #<<--
-__global__ void map~a(Collection<~a>* in, Collection<~a>* out)
-{
-    out[threadIdx.x] = ~a(in[threadIdx.x]);
-}
---
-                                  func
-                                  (convert-type (first (first collection)))
-                                  (convert-type (first (first collection)))
-                                  func)))
-     (format #<<--
-allocate Collection;
-dim3 dimBlock( ~a->count, 1 );
-dim3 dimGrid( 1, 1 );
-map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
---
-             collection
-             func
-             collection)]
-    [`(print ,exp)
-     (format "print(~a)" (compile-exp exp))]
-    [`(return ,exp)
-     (format "return ~a;\n" (compile-exp exp))]
-    [`(,func ,operands ...)
-     (define arg-string
-       (apply string-append
-              (map (λ (x) (format "~a, " x))
-                   (map compile-exp operands))))
-     (define arguments
-       (unless (empty? operands)
-         (substring arg-string 0 (- (string-length arg-string) 2))))
-     (format "~a(~a)" func arguments)]
-    ;check for distinct argument name
-    [x
-     (format "~a" x)]))
-
-  
-
-; adds "return" and "line" expressions, making compiling much easier
-(define (parse-exp expr)
-  (match expr
-    [`(cond (,preds ,bodies ...) ...)
-     `(cond
-        ,@(map (lambda (pred body)
-                 `(,pred ,@(parse-body body)))
-               preds
-               bodies))]
-    [`(define (,func ,args ...)
-        (-> ,contract ...)
-        ,body ...)
-     `(define (,func ,@args)
-        (-> ,@contract)
-        ,@(parse-body body))]
-    [else `(line ,expr)]))
-
-;; PARSER HELPER FUNCTIONS ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (return-parse expr)
-  (match expr
-    [`(cond ,clauses ...)
-     (parse-exp expr)]
-    [`(define ,x ...)
-     (error "last expression in body must evaluate to a value: define does not evaluate to a value")]
-    [`(if ,pred ,then ,else)
-     `(if ,pred
-          ,(return-parse then)
-          ,(return-parse else))]
-    [else
-     `(return ,expr)]))
-
-;; calls parse-exp on first n-1 exprs in body
-;; then calls return-parse on last expr in body
-(define (parse-body body)
-  (if (> (length body) 1)
-      `(,@(map parse-exp (take body (sub1 (length body))))
-        ,(return-parse (last body)))
-      `(,(return-parse (first body)))))
 
 ; ################
 ;;;;;;;;;;;;;;;;;;
@@ -215,66 +47,48 @@ int main()
 (define (compile-exp expr)
   (match expr
     ;use regexes to have "+ or - or * or % ...
-    [(or `(+ ,operands ..2)
-         `(- ,operands ..2)
-         `(* ,operands ..2)
-         `(/ ,operands ..2)
-         `(% ,operands ..2))
-     (define op (first expr))
+    [(struct arith (type op arguments))
      (define infix 
        (apply string-append
               (map (λ (x) (format "~a ~a " x op))
-                   (map compile-exp operands))))
+                   (map compile-exp arguments))))
      (format "(~a)" (substring infix 0 (- (string-length infix) 3)))]
-    [(or `(= ,op1 ,op2)
-         `(<= ,op1 ,op2)
-         `(>= ,op1 ,op2)
-         `(< ,op1 ,op2)
-         `(> ,op1 ,op2))
-     (define op (if (eq? (first expr) '=)
-                    '==
-                    (first exp)))
+    [(struct comp (type op arguments))
      (format "(~a ~a ~a)"
-             (compile-exp op1)
+             (compile-exp (first arguments))
              op
-             (compile-exp op2))]
+             (compile-exp (second arguments)))]
     [`(cond (,preds ,bodies ...) ...)
      ""]
-    [`(define (,func ,args ...)
-        ;contract list length is args list length plus one
-        (-> ,contract ...)
-        ,body ...)
+    [(struct deffun (name arguments contract body))
      (define c-contract (map convert-type contract))
      (define arg-string
-       (unless (empty? args)
+       (unless (empty? arguments)
          (apply string-append
                 (map (λ (x y) (format "~a ~a, " x y))
                      (take c-contract (sub1 (length c-contract)))
-                     (map compile-exp args)))))
-     (define arguments
-       (if (empty? args)
+                     (map compile-exp arguments)))))
+     (define formatted-arguments
+       (if (empty? arguments)
            ""
            (substring arg-string 0 (- (string-length arg-string) 2))))
      (define compiled-body
        (if (< (length body) 2)
            ""
            (apply string-append
-                  (map compile-exp (take body (sub1 (length body)))))))
-     (define return
-       (compile-exp (last body)))
+                  (map compile-exp body))))
      (define c-function (format #<<--
 ~a ~a(~a){
     ~a
-    ~a
 }
 --
-             (last c-contract) func arguments compiled-body return))
+             (last c-contract) name formatted-arguments compiled-body))
      (set! functions (string-append functions c-function))
      (set! device-functions (string-append device-functions (format "__device__ ~a" c-function)))
              ""]
-    [`(define ,type ,var ,expr)
-     (format "~a ~a = ~a" (convert-type type) var (compile-exp expr))]
-    [`(if ,pred ,then ,else)
+    [(struct defvar (vartype name expr))
+     (format "~a ~a = ~a" (convert-type vartype) name (compile-exp expr))]
+    [(struct if-e (type pred then else))
      (format #<<--
 if(~a) {
     ~a
@@ -285,7 +99,7 @@ if(~a) {
       (compile-exp pred)
       (compile-exp then)
       (compile-exp else))]
-    [`(line ,exp)
+    [(struct line (exp))
      (format "~a;\n" (compile-exp exp))]
     [`(map ,func ,collection)
      (set! functions 
@@ -311,18 +125,20 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
              collection)]
     [`(print ,exp)
      (format "print(~a)" (compile-exp exp))]
-    [`(return ,exp)
+    [(struct return (exp))
      (format "return ~a;\n" (compile-exp exp))]
-    [`(,func ,operands ...)
+    [(struct funcall (type name arguments))
      (define arg-string
        (apply string-append
               (map (λ (x) (format "~a, " x))
-                   (map compile-exp operands))))
-     (define arguments
-       (unless (empty? operands)
+                   (map compile-exp arguments))))
+     (define formatted-arguments
+       (unless (empty? arguments)
          (substring arg-string 0 (- (string-length arg-string) 2))))
-     (format "~a(~a)" func arguments)]
+     (format "~a(~a)" name formatted-arguments)]
     ;check for distinct argument name
+    [(struct immed (type val))
+     (format "~a" val)]
     [x
      (format "~a" x)]))
 
@@ -349,13 +165,14 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
                                                          (if (= a 0)
                                                          (func (- a 1) (+ b 1))
                                                          b)))
-                  (print (func 5 4))))
+                  (func 5 4)))
 
-(define line `((define (func a)
+(define line-prog `((define (func a)
                  (-> int int)
-                 (define x int (+ 1 a))
-                 (define y int (* 5 a))
-                 (- y x))))
+                 (define int x (+ 1 a))
+                 (define int y (* 5 a))
+                 (- y x))
+                    (func 1)))
 
 ;;;;;;;;;;;;;;;;;; type parser tests
 

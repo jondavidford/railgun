@@ -1,8 +1,10 @@
 #lang racket
 (require test-engine/racket-tests)
 
-(provide parse-type)
+(provide parse)
 
+(provide line)
+(provide return)
 (provide deffun)
 (provide defvar)
 (provide cond-e)
@@ -13,6 +15,8 @@
 (provide map-e)
 (provide immed)
 
+(struct return (expr))
+(struct line (expr))
 (struct deffun (name arguments contract body))
 (struct defvar (name type expr))
 (struct cond-e (type preds bodies))
@@ -68,13 +72,13 @@
 
 (define (get-varcontext expr)
   (match expr
-    [`(define ,type ,var ,expr)
-     `(,(nametype var type))]
     [`(define (,func ,args ...)
         ;contract list length is args list length plus one
         (-> ,contract ...)
         ,body ...)
-     (map (lambda (name type) `(,name ,type)) args (take contract (sub1 (length contract))))]
+     (map (lambda (name type) (nametype name type)) args (take contract (sub1 (length contract))))]
+    [`(define ,type ,var ,expr)
+     `(,(nametype var type))]
     [else
      `()]))
 
@@ -85,7 +89,10 @@
       (first varcontext)
       (get-nametype varname (rest varcontext))))
 
-(define (parse body funcontext varcontext)
+(define (parse program)
+  (parse-format-body (parse-type-body program '() '())))
+
+(define (parse-type-body body funcontext varcontext)
   (define body-context (append (get-funcontext body) funcontext))
   (let-values ([(vc pb)
     (for/fold ([v varcontext]
@@ -118,11 +125,14 @@
     [`(cond (,preds ,bodies ...) ...)
      (define perbody-funcontext (map get-funcontext bodies))
      (define typed-bodies 
-       (map (lambda (body context) (parse body (append context funcontext) varcontext))
+       (map (lambda (body context) (parse-type-body body (append context funcontext) varcontext))
         bodies 
         perbody-funcontext))
      (define uniform-type? 
-       (apply (lambda (x y) (eq? (get-type (last x)) (get-type (last y)))) typed-bodies))
+       (foldl 
+        (lambda (x y) (if (eq? x y) x #f)) 
+        (get-type (last (first typed-bodies))) 
+        (map (lambda (x) (get-type (last x))) typed-bodies)))
      ;; NOTE: should there also be a check here that the types are not void? i.e., they are defines
      (if uniform-type?
          (cond-e (get-type (last (last typed-bodies))) preds bodies)
@@ -133,14 +143,14 @@
         ,body ...)
      (unless (= (add1 (length args)) (length contract))
        (error 'type-error "contract length does not match function declaration"))
-     (unless (symbol=? (last contract) (get-type (parse-type (last body) 
-                                                             (append (get-funcontext body) funcontext) 
-                                                             (append (get-varcontext expr) varcontext))))
-       (error 'type-error "function return type does not match contract"))
-     (deffun func args contract 
-       (parse body 
-              (append (get-funcontext body) funcontext) 
-              (append (get-varcontext expr)) varcontext))]
+     (define parsed-function
+       (deffun func args contract 
+         (parse-type-body body 
+                          (append (get-funcontext body) funcontext) 
+                          (append (get-varcontext expr) varcontext))))
+     (unless (symbol=? (get-type (last (deffun-body parsed-function))) (last contract))
+       (error 'type-error "function return type does not match function contract"))
+     parsed-function]
     [`(define ,type ,var ,expr)
      (define typed-expr (parse-type expr funcontext varcontext))
      (unless (eq? (get-type typed-expr) type)
@@ -171,12 +181,36 @@
        [(and (symbol? x) (regexp-match #rx"[:digit:]*.[:digit:]*f" (symbol->string x)))
         (immed 'float x)]
        [(symbol? x)
-        (immed (nametype-name (get-nametype x varcontext)) x)]
+        (immed (nametype-type (get-nametype x varcontext)) x)]
        [else
         (error 'parse-type "unspecified parse-type error")])]))
 
-(parse `((define int a 1)
-        a) '() '())
+(define (parse-format-exp expr)
+  (match expr
+    [(struct cond-e (type preds bodies))
+     (cond-e type preds (map parse-format-body bodies))]
+    [(struct deffun (name arguments contract body))
+     (deffun name arguments contract (parse-format-body body))]
+    [else (line expr)]))
+
+(define (parse-format-return expr)
+  (match expr
+    [(struct cond-e _)
+     (parse-format-exp expr)]
+    [(or (struct deffun _)
+         (struct defvar _))
+     (error "last expression in body must evaluate to a value: define does not evaluate to a value")]
+    [(struct if-e (type pred then else))
+     (if-e type pred (parse-format-return then) (parse-format-return else))]
+    [else (return expr)]))
+    
+
+(define (parse-format-body body)
+  (if (> (length body) 1)
+      `(,@(map parse-format-exp (take body (sub1 (length body))))
+        ,(parse-format-return (last body)))
+      `(,(parse-format-return (first body)))))
+
 
 (parse `((define (factorial a)
   (-> int int)
@@ -185,7 +219,7 @@
     [(= a 1) 1]
     [else
      (* a (factorial (- a 1)))]))
-         (factorial 10)) '() '())
+         (factorial 10)))
 
 ;; test cases
 (check-expect (get-type (parse-type `(+ 1 2) '() '())) 'int)
@@ -243,5 +277,19 @@
 (test)
 
 
+(define line-prog `((define (func a)
+                 (-> int int)
+                 (define int x (+ 1 a))
+                 (define int y (* 5 a))
+                 (- y x))
+                    (func 1)))
 
+(define if-prog `((define (func a b) (-> int int int) (if (= a 0)
+                                                         (if (= a 0)
+                                                         (func (- a 1) (+ b 1))
+                                                         b)
+                                                         (if (= a 0)
+                                                         (func (- a 1) (+ b 1))
+                                                         b)))
+                  (func 5 4)))
                                    

@@ -11,7 +11,12 @@
 ;;;;;;;;;;;;;;;;;;
 ; ################
 
+(define functions "")
+(define device-functions "")
+
 (define (compile program)
+  (set! functions "")
+  (set! device-functions "")
   (define compiled-program (apply string-append (map compile-exp (parse program))))
   (format #<<--
 #include <stdio.h>
@@ -40,9 +45,6 @@ int main()
     device-functions
     functions
     compiled-program))
-
-(define functions "")
-(define device-functions "")
 
 (define (compile-exp expr)
   (match expr
@@ -74,7 +76,7 @@ int main()
            (substring arg-string 0 (- (string-length arg-string) 2))))
      (define compiled-body
        (if (< (length body) 2)
-           ""
+           (compile-exp (first body))
            (apply string-append
                   (map compile-exp body))))
      (define c-function (format #<<--
@@ -158,6 +160,8 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
 ;;;;;;;;;;;;;;;;;;;;
 ; ##################
 
+(define function `((define (func a) (-> int int) a) (func 1)))
+
 (define program `((define (func a b) (-> int int int) (if (= a 0)
                                                          (if (= a 0)
                                                          (func (- a 1) (+ b 1))
@@ -173,12 +177,5 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
                  (define int y (* 5 a))
                  (- y x))
                     (func 1)))
-
-;;;;;;;;;;;;;;;;;; type parser tests
-
-(define add '((define (func a) 
-                (-> int int)
-                a)
-              (map func ([int] : [1 2 3 4]))))
 
 

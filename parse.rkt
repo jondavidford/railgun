@@ -2,6 +2,7 @@
 (require test-engine/racket-tests)
 
 (provide parse)
+(provide get-type)
 
 (provide line)
 (provide return)
@@ -14,6 +15,7 @@
 (provide funcall)
 (provide map-e)
 (provide immed)
+(provide print-e)
 
 (struct return (expr))
 (struct line (expr))
@@ -26,6 +28,7 @@
 (struct funcall (type name arguments))
 (struct map-e (type fun collection))
 (struct immed (type val))
+(struct print-e (argument))
 
 (define (get-type expr)
   (match expr
@@ -46,7 +49,9 @@
     [(struct map-e (type fun collection))
      type]
     [(struct immed (type val))
-     type]))
+     type]
+    [(struct print-e (argument))
+     'void]))
 
 (struct namecontract (name contract))
 (struct nametype (name type))
@@ -90,7 +95,7 @@
       (get-nametype varname (rest varcontext))))
 
 (define (parse program)
-  (parse-format-body (parse-type-body program '() '())))
+  (parse-format-body (parse-type-body program '() '()) #t))
 
 (define (parse-type-body body funcontext varcontext)
   (define body-context (append (get-funcontext body) funcontext))
@@ -168,8 +173,9 @@
          (error 'type-error "if requires predicate to be a boolean expression"))]
     [`(map ,func ,collection)
      void]
-    [`(print ,exp)
-     (funcall 'void print (parse-type exp funcontext varcontext))]
+    [`(print ,arg)
+     (define typed-arg (parse-type arg funcontext varcontext))
+     (print-e typed-arg)]
     [`(,func ,operands ...)
      (funcall (last (namecontract-contract (get-namecontract func funcontext))) func (map (lambda (x) (parse-type x funcontext varcontext)) operands))]
     [x
@@ -188,9 +194,9 @@
 (define (parse-format-exp expr)
   (match expr
     [(struct cond-e (type preds bodies))
-     (cond-e type preds (map parse-format-body bodies))]
+     (cond-e type preds (map (lambda (body) (parse-format-body body #f)) bodies))]
     [(struct deffun (name arguments contract body))
-     (deffun name arguments contract (parse-format-body body))]
+     (deffun name arguments contract (parse-format-body body #f))]
     [else (line expr)]))
 
 (define (parse-format-return expr)
@@ -205,11 +211,15 @@
     [else (return expr)]))
     
 
-(define (parse-format-body body)
-  (if (> (length body) 1)
-      `(,@(map parse-format-exp (take body (sub1 (length body))))
-        ,(parse-format-return (last body)))
-      `(,(parse-format-return (first body)))))
+(define (parse-format-body body main?)
+  (cond 
+    [main?
+     `(,@(map parse-format-exp body))]
+    [(> (length body) 1)
+     `(,@(map parse-format-exp (take body (sub1 (length body))))
+       ,(parse-format-return (last body)))]
+    [else
+      `(,(parse-format-return (first body)))]))
 
 
 (parse `((define (factorial a)

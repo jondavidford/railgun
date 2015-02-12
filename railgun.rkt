@@ -28,18 +28,13 @@ struct Collection
     int count;
 };
 
-void print(int variable)
+~a
+
+~a
+
+void main()
 {
-    printf("%d\n", variable);
-}
-
-~a
-
-~a
-
-int main()
-{
-~a
+    ~a
 }
 --
     device-functions
@@ -125,8 +120,12 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
              collection
              func
              collection)]
-    [`(print ,exp)
-     (format "print(~a)" (compile-exp exp))]
+    [(struct print-e (exp))
+     (format "printf(\"~a\\n\", ~a)"
+             (match (get-type exp)
+               ['int "%d"]
+               ['float "%f"])
+             (compile-exp exp))]
     [(struct return (exp))
      (format "return ~a;\n" (compile-exp exp))]
     [(struct funcall (type name arguments))
@@ -159,6 +158,8 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
 ;      TESTS
 ;;;;;;;;;;;;;;;;;;;;
 ; ##################
+
+(define print `((print 1)))
 
 (define function `((define (func a) (-> int int) a) (func 1)))
 

@@ -1,3 +1,4 @@
 #!/bin/sh
 
-racket $(dirname $0)/runRailgunC.rkt "$@"
+racket $(dirname $0)/run-railgun.rkt "$@" > out.cu
+nvcc out.cu

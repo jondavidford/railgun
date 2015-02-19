@@ -98,7 +98,7 @@ if(~a) {
       (compile-exp else))]
     [(struct line (exp))
      (format "~a;\n" (compile-exp exp))]
-    [`(map ,func ,collection)
+    [(struct map-e type func collection)
      (set! functions 
            (string-append functions
                           (format #<<--
@@ -140,6 +140,13 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
     ;check for distinct argument name
     [(struct immed (type val))
      (format "~a" val)]
+    [(struct collection (type elements))
+     (format #<<--
+~a
+Collection<~a>.elements = { ~a };
+--
+             )]
+    
     [x
      (format "~a" x)]))
 

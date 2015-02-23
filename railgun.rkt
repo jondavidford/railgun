@@ -21,12 +21,34 @@
   (format #<<--
 #include <stdio.h>
 
+class Managed
+{
+    public:
+        void *operator new(size_t len) {
+            void *ptr;
+            cudaMallocManaged(&ptr, len);
+            return ptr;
+        }
+
+        void operator delete(void *ptr) {
+            cudaFree(ptr);
+        }
+};
+
 template<typename T>
 struct Collection
 {
     T* elements;
     int count;
 };
+
+tempalte<typename T>
+T* managedArray(int size)
+{
+    void *ptr;
+    cudaMallocManaged(& ptr, size*sizeof(T));
+    return (T*)ptr;
+}
 
 ~a
 
@@ -98,7 +120,7 @@ if(~a) {
       (compile-exp else))]
     [(struct line (exp))
      (format "~a;\n" (compile-exp exp))]
-    [(struct map-e type func collection)
+    [(struct map-e (type func collection))
      (set! functions 
            (string-append functions
                           (format #<<--
@@ -142,7 +164,8 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
      (format "~a" val)]
     [(struct collection (type elements))
      (format #<<--
-~a
+
+~a elements = new 
 Collection<~a>.elements = { ~a };
 --
              )]

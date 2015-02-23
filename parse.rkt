@@ -3,6 +3,7 @@
 
 (provide parse)
 (provide get-type)
+(provide get-output)
 
 (provide line)
 (provide return)
@@ -18,44 +19,74 @@
 (provide print-e)
 (provide collection)
 
-(struct return (expr))
-(struct line (expr))
-(struct deffun (name arguments contract body))
-(struct defvar (name type expr))
-(struct cond-e (type preds bodies))
-(struct if-e (type pred then else))
-(struct arith (type op arguments))
-(struct comp (type op arguments))
-(struct funcall (type name arguments))
-(struct map-e (type fun collection))
-(struct immed (type val))
-(struct print-e (argument))
-(struct collection (type elements))
+(struct return (expr) #:transparent)
+(struct line (expr) #:transparent)
+(struct deffun (name output arguments contract body) #:transparent)
+(struct defvar (name type expr) #:transparent)
+(struct cond-e (type output preds bodies) #:transparent)
+(struct if-e (type output red then else) #:transparent)
+(struct arith (type op arguments) #:transparent)
+(struct comp (type op arguments) #:transparent)
+(struct funcall (type output name arguments) #:transparent)
+(struct map-e (type output fun collection) #:transparent)
+(struct immed (type val) #:transparent)
+(struct print-e (argument) #:transparent)
+(struct collection (type output elements) #:transparent)
 
 (define (get-type expr)
   (match expr
-    [(struct deffun (name arguments contract body))
+    [(struct deffun (name output arguments contract body))
      'void]
     [(struct defvar (vartype name expr))
      'void]
-    [(struct cond-e (type preds bodies))
+    [(struct cond-e (type output preds bodies))
      type]
-    [(struct if-e (type pred then else))
+    [(struct if-e (type output pred then else))
      type]
     [(struct arith (type op arguments))
      type]
     [(struct comp (type op arguments))
      type]
-    [(struct funcall (type name arguments))
+    [(struct funcall (type output name arguments))
      type]
-    [(struct map-e (type fun collection))
+    [(struct map-e (type output fun collection))
      type]
     [(struct immed (type val))
      type]
     [(struct print-e (argument))
      'void]
-    [(struct collection (type elements))
+    [(struct collection (type output elements))
      type]))
+
+(define (get-output expr)
+  (match expr
+    [(struct deffun (name output arguments contract body))
+     output]
+    [(struct defvar (vartype name expr))
+     'void]
+    [(struct cond-e (type output preds bodies))
+     output]
+    [(struct if-e (type output pred then else))
+     output]
+    [(struct arith (type op arguments))
+     'void]
+    [(struct comp (type op arguments))
+     'void]
+    [(struct funcall (type output name arguments))
+     output]
+    [(struct map-e (type output fun collection))
+     output]
+    [(struct immed (type val))
+     'void]
+    [(struct print-e (argument))
+     'void]
+    [(struct collection (type output elements))
+     output]))
+
+(define output-counter 0)
+(define (generate-output prefix)
+  (set! output-counter (add1 output-counter))
+  (string-append "output" (number->string output-counter)))
 
 (define (get-collection-type elements)
   (cond
@@ -162,7 +193,7 @@
         (map (lambda (x) (get-type (last x))) typed-bodies)))
      ;; NOTE: should there also be a check here that the types are not void? i.e., they are defines
      (if uniform-type?
-         (cond-e (get-type (last (last typed-bodies))) preds bodies)
+         (cond-e (get-type (last (last typed-bodies))) (generate-output "") preds bodies)
          (error 'type-error "cond requires all bodies to return the same type"))]
     [`(define (,func ,args ...)
         ;contract list length is args list length plus one
@@ -171,7 +202,7 @@
      (unless (= (add1 (length args)) (length contract))
        (error 'type-error "contract length does not match function declaration"))
      (define parsed-function
-       (deffun func args contract 
+       (deffun func (generate-output "") args contract 
          (parse-type-body body 
                           (append (get-funcontext body) funcontext) 
                           (append (get-varcontext expr) varcontext))))
@@ -191,22 +222,22 @@
      (unless (eq? (get-type typed-then) (get-type typed-else))
        (error 'type-error "if requires both expressions to return the same type"))
      (if (eq? 'bool (get-type typed-pred))
-         (if-e (get-type typed-then) typed-pred typed-then typed-else)
+         (if-e (get-type typed-then) (generate-output "") typed-pred typed-then typed-else)
          (error 'type-error "if requires predicate to be a boolean expression"))]
     [`(map ,func ,collection)
      (define parsed-col (parse-type collection funcontext varcontext))
      (define contract (namecontract-contract (get-namecontract func funcontext)))
      (define map-type (string->symbol (string-append "<" (symbol->string (second contract)) ">")))
      (if (eq? (first contract) (look-in-collection (get-type parsed-col)))
-         (map-e map-type func parsed-col)
+         (map-e map-type (generate-output "") func parsed-col)
          (error 'type-error "function argument type does not match collection type"))]
     [`(print ,arg)
      (define typed-arg (parse-type arg funcontext varcontext))
      (print-e typed-arg)]
     [`(collection (,elements ...))
-     (collection (get-collection-type elements) elements)]
+     (collection (get-collection-type elements) (generate-output "") elements)]
     [`(,func ,operands ...)
-     (funcall (last (namecontract-contract (get-namecontract func funcontext))) func (map (lambda (x) (parse-type x funcontext varcontext)) operands))]
+     (funcall (last (namecontract-contract (get-namecontract func funcontext))) (generate-output "") func (map (lambda (x) (parse-type x funcontext varcontext)) operands))]
     [x
      (cond
        [(and (boolean? x))
@@ -222,10 +253,10 @@
 
 (define (parse-format-exp expr)
   (match expr
-    [(struct cond-e (type preds bodies))
-     (cond-e type preds (map (lambda (body) (parse-format-body body #f)) bodies))]
-    [(struct deffun (name arguments contract body))
-     (deffun name arguments contract (parse-format-body body #f))]
+    [(struct cond-e (type output preds bodies))
+     (cond-e type output preds (map (lambda (body) (parse-format-body body #f)) bodies))]
+    [(struct deffun (name output arguments contract body))
+     (deffun name output arguments contract (parse-format-body body #f))]
     [else (line expr)]))
 
 (define (parse-format-return expr)
@@ -235,8 +266,8 @@
     [(or (struct deffun _)
          (struct defvar _))
      (error "last expression in body must evaluate to a value: define does not evaluate to a value")]
-    [(struct if-e (type pred then else))
-     (if-e type pred (parse-format-return then) (parse-format-return else))]
+    [(struct if-e (type output pred then else))
+     (if-e type output pred (parse-format-return then) (parse-format-return else))]
     [else (return expr)]))
     
 
@@ -346,4 +377,7 @@
                                                          (func (- a 1) (+ b 1))
                                                          b)))
                   (func 5 4)))
-                                   
+
+(define program `((define (add1 x) (-> int int) (+ x 1))
+                  (define (func a) (-> <int> <int>) (map add1 a))
+                  (func (collection (1 2 3 4)))))

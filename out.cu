@@ -15,13 +15,13 @@ class Managed
 };
 
 template<typename T>
-struct Collection
+struct Collection : public Managed
 {
     T* elements;
     int count;
 };
 
-tempalte<typename T>
+template<typename T>
 T* managedArray(int size)
 {
     void *ptr;
@@ -33,8 +33,13 @@ T* managedArray(int size)
 
 
 
-void main()
+int main()
 {
-    printf("%d\n", (3 * 5 * 1 * 2 * 4));
+    Collection<int>* aPlaceHolderCollectionName = new Collection<int>;
+aPlaceHolderCollectionName->count = 4;
+aPlaceHolderCollectionName->elements = managedArray<int>(4);
+int aPlaceHolderArrayName[4] = {1,2,3,4};
+memcpy(aPlaceHolderCollectionName->elements, aPlaceHolderArrayName, sizeof(int)*4);;
+printf("%d\n", 1);
 
 }

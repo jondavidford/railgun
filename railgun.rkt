@@ -36,13 +36,13 @@ class Managed
 };
 
 template<typename T>
-struct Collection
+struct Collection : public Managed
 {
     T* elements;
     int count;
 };
 
-tempalte<typename T>
+template<typename T>
 T* managedArray(int size)
 {
     void *ptr;
@@ -54,7 +54,7 @@ T* managedArray(int size)
 
 ~a
 
-void main()
+int main()
 {
     ~a
 }
@@ -163,13 +163,24 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
     [(struct immed (type val))
      (format "~a" val)]
     [(struct collection (type elements))
+     (define element-type (substring (symbol->string type) 1 (sub1 (string-length (symbol->string type)))))
+     (define count (length elements))
      (format #<<--
-
-~a elements = new 
-Collection<~a>.elements = { ~a };
+Collection<~a>* aPlaceHolderCollectionName = new Collection<~a>;
+aPlaceHolderCollectionName->count = ~a;
+aPlaceHolderCollectionName->elements = managedArray<~a>(~a);
+int aPlaceHolderArrayName[~a] = {~a};
+memcpy(aPlaceHolderCollectionName->elements, aPlaceHolderArrayName, sizeof(~a)*~a);
 --
-             )]
-    
+             element-type
+             element-type
+             count
+             element-type
+             count
+             count
+             (list->initializer elements)
+             element-type
+             count)]
     [x
      (format "~a" x)]))
 
@@ -182,6 +193,10 @@ Collection<~a>.elements = { ~a };
      (format "Collection<~a>" (convert-type (first type)))]
     [else
      (symbol->string type)]))
+
+(define (list->initializer l)
+  (define with-commas (apply string-append (map (lambda (x) (string-append (number->string x) ",")) l)))
+  (substring with-commas 0 (sub1 (string-length with-commas))))
 
 ; ##################
 ;;;;;;;;;;;;;;;;;;;;

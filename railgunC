@@ -1,4 +1,4 @@
 #!/bin/sh
 
 racket $(dirname $0)/run-railgun.rkt "$@" > out.cu
-nvcc out.cu -arch compute_30
+nvcc -arch compute_35 out.cu

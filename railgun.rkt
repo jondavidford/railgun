@@ -77,15 +77,13 @@ int main()
              (compile-exp (first arguments))
              op
              (compile-exp (second arguments)))]
-    [`(cond (,preds ,bodies ...) ...)
-     ""]
-    [(struct deffun (name arguments contract body))
+    [(struct deffun (name output arguments contract body))
      (define c-contract (map convert-type contract))
      (define arg-string
        (unless (empty? arguments)
          (apply string-append
                 (map (λ (x y) (format "~a ~a, " x y))
-                     (take c-contract (sub1 (length c-contract)))
+                     (map convert-type (take c-contract (sub1 (length c-contract))))
                      (map compile-exp arguments)))))
      (define formatted-arguments
        (if (empty? arguments)
@@ -101,13 +99,13 @@ int main()
     ~a
 }
 --
-             (last c-contract) name formatted-arguments compiled-body))
+             (convert-type (last c-contract)) name formatted-arguments compiled-body))
      (set! functions (string-append functions c-function))
      (set! device-functions (string-append device-functions (format "__device__ ~a" c-function)))
              ""]
     [(struct defvar (vartype name expr))
      (format "~a ~a = ~a" (convert-type vartype) name (compile-exp expr))]
-    [(struct if-e (type pred then else))
+    [(struct if-e (type output pred then else))
      (format #<<--
 if(~a) {
     ~a
@@ -120,7 +118,9 @@ if(~a) {
       (compile-exp else))]
     [(struct line (exp))
      (format "~a;\n" (compile-exp exp))]
-    [(struct map-e (type func collection))
+    [(struct map-e (type output func collection))
+     (define input (get-output collection))
+     (define compiled-collection (compile-exp collection))
      (set! functions 
            (string-append functions
                           (format #<<--
@@ -129,19 +129,20 @@ __global__ void map~a(Collection<~a>* in, Collection<~a>* out)
     out[threadIdx.x] = ~a(in[threadIdx.x]);
 }
 --
-                                  func
-                                  (convert-type (first (first collection)))
-                                  (convert-type (first (first collection)))
-                                  func)))
+                                  "func"
+                                  "int"
+                                  "int"
+                                  "func")))
      (format #<<--
-allocate Collection;
+~a
 dim3 dimBlock( ~a->count, 1 );
 dim3 dimGrid( 1, 1 );
-map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
+map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
 --
-             collection
+             compiled-collection
+             input
              func
-             collection)]
+             input)]
     [(struct print-e (exp))
      (format "printf(\"~a\\n\", ~a)"
              (match (get-type exp)
@@ -150,7 +151,7 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
              (compile-exp exp))]
     [(struct return (exp))
      (format "return ~a;\n" (compile-exp exp))]
-    [(struct funcall (type name arguments))
+    [(struct funcall (type output name arguments))
      (define arg-string
        (apply string-append
               (map (λ (x) (format "~a, " x))
@@ -160,27 +161,33 @@ map~a<<<dimGrid, dimBlock>>>(&~a, allocatedCollection);
          (substring arg-string 0 (- (string-length arg-string) 2))))
      (format "~a(~a)" name formatted-arguments)]
     ;check for distinct argument name
-    [(struct immed (type val))
-     (format "~a" val)]
-    [(struct collection (type elements))
+    [(struct collection (type output elements))
      (define element-type (substring (symbol->string type) 1 (sub1 (string-length (symbol->string type)))))
      (define count (length elements))
      (format #<<--
-Collection<~a>* aPlaceHolderCollectionName = new Collection<~a>;
-aPlaceHolderCollectionName->count = ~a;
-aPlaceHolderCollectionName->elements = managedArray<~a>(~a);
-int aPlaceHolderArrayName[~a] = {~a};
-memcpy(aPlaceHolderCollectionName->elements, aPlaceHolderArrayName, sizeof(~a)*~a);
+Collection<~a>* ~a = new Collection<~a>;
+~a->count = ~a;
+~a->elements = managedArray<~a>(~a);
+int ~aImmediate[~a] = {~a};
+memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 --
              element-type
+             output
+             element-type
+             output
+             count
+             output
              element-type
              count
-             element-type
-             count
+             output
              count
              (list->initializer elements)
+             output
+             output
              element-type
              count)]
+    [(struct immed (type val))
+     (format "~a" val)]
     [x
      (format "~a" x)]))
 
@@ -189,10 +196,14 @@ memcpy(aPlaceHolderCollectionName->elements, aPlaceHolderArrayName, sizeof(~a)*~
 
 (define (convert-type type)
   (cond
-    [(list? type)
-     (format "Collection<~a>" (convert-type (first type)))]
+    [(string? type)
+     (if (string=? (substring type 0 1) "<")
+         (format "Collection<~a>" (convert-type (substring type 1 (sub1 (string-length type)))))
+         type)]
     [else
-     (symbol->string type)]))
+     (if (symbol? type)
+         (symbol->string type)
+         type)]))
 
 (define (list->initializer l)
   (define with-commas (apply string-append (map (lambda (x) (string-append (number->string x) ",")) l)))
@@ -208,20 +219,15 @@ memcpy(aPlaceHolderCollectionName->elements, aPlaceHolderArrayName, sizeof(~a)*~
 
 (define function `((define (func a) (-> int int) a) (func 1)))
 
-(define program `((define (func a b) (-> int int int) (if (= a 0)
-                                                         (if (= a 0)
-                                                         (func (- a 1) (+ b 1))
-                                                         b)
-                                                         (if (= a 0)
-                                                         (func (- a 1) (+ b 1))
-                                                         b)))
-                  (func 5 4)))
+(define program `((define (add1 x) (-> int int) (+ x 1))
+                  (define (func a) (-> <int> <int>) (map add1 a))
+                  (func (collection (1 2 3 4)))))
 
 (define line-prog `((define (func a)
-                 (-> int int)
-                 (define int x (+ 1 a))
-                 (define int y (* 5 a))
-                 (- y x))
+                      (-> int int)
+                      (define int x (+ 1 a))
+                      (define int y (* 5 a))
+                      (- y x))
                     (func 1)))
 
 

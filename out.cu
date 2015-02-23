@@ -29,17 +29,41 @@ T* managedArray(int size)
     return (T*)ptr;
 }
 
+__device__ int add1(int x){
+    return (x + 1);
 
+}
 
+__device__ Collection<int> func(Collection<int> a){
+    return a
+    dim3 dimBlock( void->count, 1 );
+    dim3 dimGrid( 1, 1 );
+    mapadd1<<<dimGrid, dimBlock>>>(&void, generatedOutput);;
 
+}
+
+int add1(int x){
+    return (x + 1);
+
+}
+
+__global__ void mapfunc(Collection<int>* in, Collection<int>* out)
+{
+    out[threadIdx.x] = func(in[threadIdx.x]);
+}
+
+Collection<int> func(Collection<int> a){
+    return a
+    dim3 dimBlock( void->count, 1 );
+    dim3 dimGrid( 1, 1 );
+    mapadd1<<<dimGrid, dimBlock>>>(&void, generatedOutput);;
+}
 
 int main()
 {
-    Collection<int>* aPlaceHolderCollectionName = new Collection<int>;
-aPlaceHolderCollectionName->count = 4;
-aPlaceHolderCollectionName->elements = managedArray<int>(4);
-int aPlaceHolderArrayName[4] = {1,2,3,4};
-memcpy(aPlaceHolderCollectionName->elements, aPlaceHolderArrayName, sizeof(int)*4);;
-printf("%d\n", 1);
-
+    func(Collection<int>* output5 = new Collection<int>;
+    output5->count = 4;
+    output5->elements = managedArray<int>(4);
+    int output5Immediate[4] = {1,2,3,4};
+    memcpy(output5->elements, output5Immediate, sizeof(int)*4););
 }

@@ -16,6 +16,7 @@
 (provide map-e)
 (provide immed)
 (provide print-e)
+(provide collection)
 
 (struct return (expr))
 (struct line (expr))
@@ -29,6 +30,7 @@
 (struct map-e (type fun collection))
 (struct immed (type val))
 (struct print-e (argument))
+(struct collection (type elements))
 
 (define (get-type expr)
   (match expr
@@ -51,7 +53,27 @@
     [(struct immed (type val))
      type]
     [(struct print-e (argument))
-     'void]))
+     'void]
+    [(struct collection (type elements))
+     type]))
+
+(define (get-collection-type elements)
+  (cond
+    [(list? elements) 
+     (define types (map get-collection-type elements))
+     (define uniform? (andmap (lambda (x) (eq? x (first types))) types))
+     (if uniform?
+         (string->symbol (string-append "<" (symbol->string (first types)) ">"))
+         (error 'type-error "collection does not contain elements of the same type"))]
+    [else
+     (get-type (parse-type elements '() '()))]))
+
+(define (look-in-collection col)
+  (cond
+    [(regexp-match #rx"<*>" (symbol->string col))
+     (string->symbol (list->string (drop-right (rest (string->list (symbol->string col))) 1)))]
+    [else
+     (error 'type-error "contract does not match input collection type")]))
 
 (struct namecontract (name contract))
 (struct nametype (name type))
@@ -172,10 +194,17 @@
          (if-e (get-type typed-then) typed-pred typed-then typed-else)
          (error 'type-error "if requires predicate to be a boolean expression"))]
     [`(map ,func ,collection)
-     void]
+     (define parsed-col (parse-type collection funcontext varcontext))
+     (define contract (namecontract-contract (get-namecontract func funcontext)))
+     (define map-type (string->symbol (string-append "<" (symbol->string (second contract)) ">")))
+     (if (eq? (first contract) (look-in-collection (get-type parsed-col)))
+         (map-e map-type func parsed-col)
+         (error 'type-error "function argument type does not match collection type"))]
     [`(print ,arg)
      (define typed-arg (parse-type arg funcontext varcontext))
      (print-e typed-arg)]
+    [`(collection (,elements ...))
+     (collection (get-collection-type elements) elements)]
     [`(,func ,operands ...)
      (funcall (last (namecontract-contract (get-namecontract func funcontext))) func (map (lambda (x) (parse-type x funcontext varcontext)) operands))]
     [x
@@ -284,7 +313,22 @@
                                         #t
                                         1.0f) '() '())) "type-error: if requires both expressions to return the same type")
 
+(check-expect (get-type (parse-type `(collection (1 2 3 4)) '() '())) '<int>)
+
+(check-expect (get-type (parse-type `(collection ((1 2 3 4))) '() '())) '<<int>>)
+
+(check-expect (get-type (parse-type `(collection ((12 3 43) (1 2 3 4))) '() '())) '<<int>>)
+
+(check-expect (get-type (parse-type `(collection (((12) (3) (43)) ((1) (2) (3) (4)))) '() '())) '<<<int>>>)
+
+(check-error (get-type (parse-type `(collection (((12) (3) (43)) ((1) (2) (3) 4))) '() '())) "type-error: collection does not contain elements of the same type")
+
 (test)
+
+(define map-test `((define (func x)
+                     (-> int int)
+                     (+ x 1))
+                   (map func (collection (1 2 3 4 5)))))
 
 
 (define line-prog `((define (func a)

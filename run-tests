@@ -1,0 +1,53 @@
+#!/bin/sh
+
+RGPROGRAMS=tests/*.rg
+
+num_tests=0
+num_passed_tests=0
+
+for prog in $RGPROGRAMS
+do
+    FAIL=0
+    num_tests=$((num_tests + 1))
+
+    echo "starting test for $prog..."
+
+    # run railgun compiler
+    racket $(dirname $0)/run-railgun.rkt "$prog" > out.cu
+    if [ $FAIL -ne 0 ]
+    then
+        echo "test $prog failed during railgun compile step"
+        continue
+    fi
+
+    # run cuda compiler
+    nvcc -arch compute_35 out.cu --output-file a.out || FAIL=$?
+    if [ $FAIL -ne 0 ]
+    then
+        echo "test $prog failed during cuda compile step"
+        echo "your program may be invalid or maybe railgun compiler is broken"
+        continue
+    fi
+
+    # run the compiled program
+    ./a.out > compiled.res || FAIL=$?
+    if [ $FAIL -ne 0 ]
+    then
+        echo "test $prog failed during runtime, better fix the compiler"
+        continue
+    fi
+ 
+    # get the matching .res file string
+    res="${prog%.rg}.res"
+
+    if [ diff compiled.res $res -ne 0 ]
+    then
+        echo "test $prog failed, result was: $(cat compiled.res)"
+        echo "expected result was: $(cat res)"
+    else
+        echo "passed"
+        num_passed_tests=$((num_passed_tests + 1))
+    fi
+done
+
+echo "$num_passed_tests tests passed out of a total of $num_tests"

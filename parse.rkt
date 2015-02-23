@@ -250,7 +250,7 @@
     [else
       `(,(parse-format-return (first body)))]))
 
-
+#|
 (parse `((define (factorial a)
   (-> int int)
   (cond
@@ -259,6 +259,7 @@
     [else
      (* a (factorial (- a 1)))]))
          (factorial 10)))
+|#
 
 ;; test cases
 (check-expect (get-type (parse-type `(+ 1 2) '() '())) 'int)
@@ -323,7 +324,6 @@
 
 (check-error (get-type (parse-type `(collection (((12) (3) (43)) ((1) (2) (3) 4))) '() '())) "type-error: collection does not contain elements of the same type")
 
-(test)
 
 (define map-test `((define (func x)
                      (-> int int)

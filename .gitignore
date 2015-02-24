@@ -2,3 +2,5 @@ compiled
 *.rkt~
 out.c
 out.cu
+a.out
+compiled.res

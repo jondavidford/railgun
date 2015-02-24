@@ -39,8 +39,9 @@ do
  
     # get the matching .res file string
     res="${prog%.rg}.res"
+    diff compiled.res $res || FAIL=$?
 
-    if [ diff compiled.res $res -ne 0 ]
+    if [ $FAIL -ne 0 ]
     then
         echo "test $prog failed, result was: $(cat compiled.res)"
         echo "expected result was: $(cat res)"

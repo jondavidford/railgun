@@ -193,9 +193,9 @@ map~a<<<dimGrid, dimBlock>>>(~a, __kernel_output_~a);
 int __collection_size = __kernel_output~a->size;
 printf("[");
 for (int i = 0; i < __collection_size-1; ++i) {
-    printf("\"%d ,\", __kernel_output~a->elements[i]);
+    printf("%d ,", __kernel_output~a->elements[i]);
 }
-printf("\"%d\", __kernel_output~a->elements[__collection_size-1]);
+printf("%d", __kernel_output~a->elements[__collection_size-1]);
 printf("]");
 --
                 compiled-exp

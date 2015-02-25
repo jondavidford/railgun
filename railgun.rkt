@@ -144,35 +144,67 @@ if(~a) {
     [(struct map-e (type output func collection))
      (define input (get-output collection))
      (define compiled-collection (compile-exp collection))
+     (define collection-class-string (make-collection-class-string (symbol->string type)))
      (set! functions 
            (string-append functions
                           (format #<<--
-__global__ void map~a(Collection<~a>* in, Collection<~a>* out)
+__global__ void map~a(~a* in, ~a* out)
 {
-    out[threadIdx.x] = ~a(in[threadIdx.x]);
+    out->elements[threadIdx.x] = device_~a(in->elements[threadIdx.x]);
 }
 --
-                                  "func"
-                                  "int"
-                                  "int"
-                                  "func")))
+                                  func
+                                  collection-class-string
+                                  collection-class-string
+                                  func)))
      (format #<<--
 ~a
+~a* ~a = new ~a;
+~a->count = ~a->count;
+~a->elements = managedArray<~a>(~a->count);
+
 dim3 dimBlock( ~a->count, 1 );
 dim3 dimGrid( 1, 1 );
-map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
+map~a<<<dimGrid, dimBlock>>>(~a, ~a);
+cudaDeviceSynchronize();
 --
              compiled-collection
+             collection-class-string
+             output
+             collection-class-string
+             output
+             input
+             output
+             (look-in-collection type)
+             input
              input
              func
-             input)]
+             input
+             output)]
     ; PRINT EXPRESSION
     [(struct print-e (exp))
      (define compiled-exp (compile-exp exp))
-     (match (get-type exp)
-       ['int (format "printf(\"%d\\n\", ~a)" compiled-exp)]
-       ['float (format "printf(\"%f\\n\", ~a)" compiled-exp)]
-       ['bool (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]
+     (match (symbol->string (get-type exp))
+       ; currently only Collection<int> supported
+       [(regexp #rx"<*>") 
+        (define output (get-output exp))
+        (format #<<--
+~a
+
+int __collection_size = ~a->count;
+printf("[");
+for (int i = 0; i < __collection_size-1; ++i) {
+    printf("%d, ", ~a->elements[i]);
+}
+printf("%d]\n", ~a->elements[__collection_size-1])
+--
+                compiled-exp
+                output
+                output
+                output)]
+       [(regexp #rx"int") (format "printf(\"%d\\n\", ~a)" compiled-exp)]
+       [(regexp #rx"float") (format "printf(\"%f\\n\", ~a)" compiled-exp)]
+       [(regexp #rx"bool") (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]
     ; RETURN EXPRESSION
     ; the parser thinks this expression can be compiled into a single line
     ; and that the line is a return statement in C
@@ -193,18 +225,19 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
     ; COLLECTION IMMEDIATE
     ; generate multiple lines of code that allocate an array for a collection
     [(struct collection (type output elements))
-     (define element-type (substring (symbol->string type) 1 (sub1 (string-length (symbol->string type)))))
+     (define collection-class-string (make-collection-class-string (symbol->string type)))
+     (define element-type (look-in-collection type))
      (define count (length elements))
      (format #<<--
-Collection<~a>* ~a = new Collection<~a>;
+~a* ~a = new ~a;
 ~a->count = ~a;
 ~a->elements = managedArray<~a>(~a);
 int ~aImmediate[~a] = {~a};
 memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 --
-             element-type
+             collection-class-string
              output
-             element-type
+             collection-class-string
              output
              count
              output
@@ -225,6 +258,13 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 
 ;; COMPILER HELPER FUNCTIONS ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  
+(define (make-collection-class-string type)
+  (cond
+    [(regexp-match #rx"<*>" type)
+     (format "Collection<~a>"
+             (make-collection-class-string (list->string (drop-right (rest (string->list type)) 1))))]
+    [else type]))
 
 (define (convert-type type)
   (cond
@@ -264,6 +304,11 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 
 (define equal-test `((print (= 1 1))
                      (print (= 1 0))))
+
+(define map-test `((define (func x)
+                     (-> int int)
+                     (+ x 1))
+                   (print (map func (collection (1 2 3 4 5))))))
 
 
 

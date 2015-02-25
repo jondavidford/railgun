@@ -4,6 +4,7 @@
 (provide parse)
 (provide get-type)
 (provide get-output)
+(provide look-in-collection)
 
 (provide line)
 (provide return)
@@ -251,6 +252,8 @@
        [else
         (error 'parse-type "unspecified parse-type error")])]))
 
+; parse formatting functions
+; used to add "line" and "return" structs
 (define (parse-format-exp expr)
   (match expr
     [(struct cond-e (type output preds bodies))
@@ -359,7 +362,7 @@
 (define map-test `((define (func x)
                      (-> int int)
                      (+ x 1))
-                   (map func (collection (1 2 3 4 5)))))
+                   (print (map func (collection (1 2 3 4 5))))))
 
 
 (define line-prog `((define (func a)

@@ -166,6 +166,7 @@ __global__ void map~a(~a* in, ~a* out)
 dim3 dimBlock( ~a->count, 1 );
 dim3 dimGrid( 1, 1 );
 map~a<<<dimGrid, dimBlock>>>(~a, ~a);
+cudaDeviceSynchronize();
 --
              compiled-collection
              collection-class-string
@@ -196,7 +197,7 @@ for (int i = 0; i < __collection_size-1; ++i) {
     printf("%d ,", ~a->elements[i]);
 }
 printf("%d", ~a->elements[__collection_size-1]);
-printf("]");
+printf("]\n")
 --
                 compiled-exp
                 output

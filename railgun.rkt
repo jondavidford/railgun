@@ -1,9 +1,7 @@
 #lang racket
 
 (require "parse.rkt")
-
 (provide compile)
-
 
 ; ################
 ;;;;;;;;;;;;;;;;;;
@@ -75,7 +73,9 @@ int main()
     [(struct comp (type op arguments))
      (format "(~a ~a ~a)"
              (compile-exp (first arguments))
-             op
+             (if (eq? op '=)
+                 "=="
+                 op)
              (compile-exp (second arguments)))]
     [(struct deffun (name output arguments contract body))
      (define c-contract (map convert-type contract))
@@ -144,11 +144,11 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
              func
              input)]
     [(struct print-e (exp))
-     (format "printf(\"~a\\n\", ~a)"
-             (match (get-type exp)
-               ['int "%d"]
-               ['float "%f"])
-             (compile-exp exp))]
+     (define compiled-exp (compile-exp exp))
+     (match (get-type exp)
+       ['int (format "printf(\"%d\\n\", ~a)" compiled-exp)]
+       ['float (format "printf(\"%f\\n\", ~a)" compiled-exp)]
+       ['bool (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\"" compiled-exp)])]
     [(struct return (exp))
      (format "return ~a;\n" (compile-exp exp))]
     [(struct funcall (type output name arguments))
@@ -211,7 +211,7 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 
 ; ##################
 ;;;;;;;;;;;;;;;;;;;;
-;      TESTS
+;  TEST PROGRAMS
 ;;;;;;;;;;;;;;;;;;;;
 ; ##################
 
@@ -229,5 +229,9 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
                       (define int y (* 5 a))
                       (- y x))
                     (func 1)))
+
+(define equal-test `((print (= 1 1))
+                     (print (= 1 0))))
+
 
 

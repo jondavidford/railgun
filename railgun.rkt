@@ -194,10 +194,9 @@ cudaDeviceSynchronize();
 int __collection_size = ~a->count;
 printf("[");
 for (int i = 0; i < __collection_size-1; ++i) {
-    printf("%d ,", ~a->elements[i]);
+    printf("%d, ", ~a->elements[i]);
 }
-printf("%d", ~a->elements[__collection_size-1]);
-printf("]\n")
+printf("%d]\n", ~a->elements[__collection_size-1])
 --
                 compiled-exp
                 output

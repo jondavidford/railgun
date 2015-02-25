@@ -170,6 +170,7 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
     [(struct print-e (exp))
      (define compiled-exp (compile-exp exp))
      (match (get-type exp)
+       [(regexp #rx"<*>") (format "printf(\"hi\")")]
        ['int (format "printf(\"%d\\n\", ~a)" compiled-exp)]
        ['float (format "printf(\"%f\\n\", ~a)" compiled-exp)]
        ['bool (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]

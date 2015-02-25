@@ -150,7 +150,7 @@ if(~a) {
                           (format #<<--
 __global__ void map~a(~a* in, ~a* out)
 {
-    out.elements[threadIdx.x] = device_~a(in.elements[threadIdx.x]);
+    out->elements[threadIdx.x] = device_~a(in->elements[threadIdx.x]);
 }
 --
                                   func
@@ -160,12 +160,12 @@ __global__ void map~a(~a* in, ~a* out)
      (format #<<--
 ~a
 ~a* __device__~a = new ~a;
-__device__~a->count = ~a->count;
-__device__~a->elements = managedArray<~a>(~a->count);
+__kernel_output_~a->count = ~a->count;
+__kernel_output_~a->elements = managedArray<~a>(~a->count);
 
 dim3 dimBlock( ~a->count, 1 );
 dim3 dimGrid( 1, 1 );
-map~a<<<dimGrid, dimBlock>>>(&~a, &__device__~a);
+map~a<<<dimGrid, dimBlock>>>(~a, __kernel_output_~a);
 --
              compiled-collection
              collection-class-string
@@ -184,7 +184,21 @@ map~a<<<dimGrid, dimBlock>>>(&~a, &__device__~a);
     [(struct print-e (exp))
      (define compiled-exp (compile-exp exp))
      (match (symbol->string (get-type exp))
-       [(regexp #rx"<*>") (format "printf(\"hi\")")]
+       ; currently only Collection<int> supported
+       [(regexp #rx"<*>") 
+        (define output (get-output exp))
+        (format #<<--
+int __collection_size = ~a->size;
+printf("[");
+for (int i = 0; i < __collection_size-1; ++i) {
+    printf("\"%d ,\", ~a->elements[i]);
+}
+printf("\"%d\", ~a->elements[__collection_size-1]);
+printf("]");
+--
+                output
+                output
+                output)]
        [(regexp #rx"int") (format "printf(\"%d\\n\", ~a)" compiled-exp)]
        [(regexp #rx"float") (format "printf(\"%f\\n\", ~a)" compiled-exp)]
        [(regexp #rx"bool") (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]
@@ -241,7 +255,7 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 
 ;; COMPILER HELPER FUNCTIONS ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+  
 (define (make-collection-class-string type)
   (cond
     [(regexp-match #rx"<*>" type)
@@ -291,7 +305,7 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 (define map-test `((define (func x)
                      (-> int int)
                      (+ x 1))
-                   (map func (collection (1 2 3 4 5)))))
+                   (print (map func (collection (1 2 3 4 5))))))
 
 
 

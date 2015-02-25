@@ -169,11 +169,11 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
     ; PRINT EXPRESSION
     [(struct print-e (exp))
      (define compiled-exp (compile-exp exp))
-     (match (get-type exp)
+     (match (symbol->string (get-type exp))
        [(regexp #rx"<*>") (format "printf(\"hi\")")]
-       ['int (format "printf(\"%d\\n\", ~a)" compiled-exp)]
-       ['float (format "printf(\"%f\\n\", ~a)" compiled-exp)]
-       ['bool (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]
+       [(regexp #rx"int") (format "printf(\"%d\\n\", ~a)" compiled-exp)]
+       [(regexp #rx"float") (format "printf(\"%f\\n\", ~a)" compiled-exp)]
+       [(regexp #rx"bool") (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]
     ; RETURN EXPRESSION
     ; the parser thinks this expression can be compiled into a single line
     ; and that the line is a return statement in C

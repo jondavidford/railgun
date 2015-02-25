@@ -159,7 +159,7 @@ __global__ void map~a(~a* in, ~a* out)
                                   func)))
      (format #<<--
 ~a
-~a* __device__~a = new ~a;
+~a* ~a = new ~a;
 ~a->count = ~a->count;
 ~a->elements = managedArray<~a>(~a->count);
 
@@ -169,7 +169,7 @@ map~a<<<dimGrid, dimBlock>>>(~a, ~a);
 --
              compiled-collection
              collection-class-string
-             input
+             output
              collection-class-string
              output
              input

@@ -147,15 +147,15 @@ if(~a) {
      (set! functions 
            (string-append functions
                           (format #<<--
-__global__ void map~a(Collection<~a>* in, Collection<~a>* out)
+__global__ void map~a(~a* in, ~a* out)
 {
     out.elements[threadIdx.x] = ~a(in.elements[threadIdx.x]);
 }
 --
-                                  "func"
-                                  "int"
-                                  "int"
-                                  "func")))
+                                  func
+                                  (make-collection-class-string type)
+                                  (make-collection-class-string type)
+                                  (string-append "device_" func))))
      (format #<<--
 ~a
 dim3 dimBlock( ~a->count, 1 );
@@ -194,18 +194,19 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
     ; COLLECTION IMMEDIATE
     ; generate multiple lines of code that allocate an array for a collection
     [(struct collection (type output elements))
+     (define collection-class-string (make-collection-class-string (symbol->string type)))
      (define element-type (substring (symbol->string type) 1 (sub1 (string-length (symbol->string type)))))
      (define count (length elements))
      (format #<<--
-Collection<~a>* ~a = new Collection<~a>;
+~a* ~a = new ~a;
 ~a->count = ~a;
 ~a->elements = managedArray<~a>(~a);
 int ~aImmediate[~a] = {~a};
 memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 --
-             element-type
+             collection-class-string
              output
-             element-type
+             collection-class-string
              output
              count
              output
@@ -226,6 +227,13 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 
 ;; COMPILER HELPER FUNCTIONS ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (make-collection-class-string type)
+  (cond
+    [(regexp-match #rx"<*>" type)
+     (format "Collection<~a>"
+             (make-collection-class-string (list->string (drop-right (rest (string->list type)) 1))))]
+    [else type]))
 
 (define (convert-type type)
   (cond

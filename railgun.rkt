@@ -160,26 +160,26 @@ __global__ void map~a(~a* in, ~a* out)
      (format #<<--
 ~a
 ~a* __device__~a = new ~a;
-__kernel_output_~a->count = ~a->count;
-__kernel_output_~a->elements = managedArray<~a>(~a->count);
+~a->count = ~a->count;
+~a->elements = managedArray<~a>(~a->count);
 
 dim3 dimBlock( ~a->count, 1 );
 dim3 dimGrid( 1, 1 );
-map~a<<<dimGrid, dimBlock>>>(~a, __kernel_output_~a);
+map~a<<<dimGrid, dimBlock>>>(~a, ~a);
 --
              compiled-collection
              collection-class-string
              input
              collection-class-string
+             output
              input
-             input
-             input
+             output
              (look-in-collection type)
              input
              input
              func
              input
-             input)]
+             output)]
     ; PRINT EXPRESSION
     [(struct print-e (exp))
      (define compiled-exp (compile-exp exp))
@@ -190,12 +190,12 @@ map~a<<<dimGrid, dimBlock>>>(~a, __kernel_output_~a);
         (format #<<--
 ~a
 
-int __collection_size = __kernel_output~a->size;
+int __collection_size = ~a->size;
 printf("[");
 for (int i = 0; i < __collection_size-1; ++i) {
-    printf("%d ,", __kernel_output~a->elements[i]);
+    printf("%d ,", ~a->elements[i]);
 }
-printf("%d", __kernel_output~a->elements[__collection_size-1]);
+printf("%d", ~a->elements[__collection_size-1]);
 printf("]");
 --
                 compiled-exp

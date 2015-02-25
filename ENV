@@ -1,0 +1,2 @@
+export PATH=/home/joncon/racket/bin:$PATH
+source ~/cudaenv

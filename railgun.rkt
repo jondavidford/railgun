@@ -149,13 +149,13 @@ if(~a) {
                           (format #<<--
 __global__ void map~a(~a* in, ~a* out)
 {
-    out.elements[threadIdx.x] = ~a(in.elements[threadIdx.x]);
+    out.elements[threadIdx.x] = device_~a(in.elements[threadIdx.x]);
 }
 --
                                   func
-                                  (make-collection-class-string type)
-                                  (make-collection-class-string type)
-                                  (string-append "device_" func))))
+                                  (make-collection-class-string (symbol->string type))
+                                  (make-collection-class-string (symbol->string type))
+                                  func)))
      (format #<<--
 ~a
 dim3 dimBlock( ~a->count, 1 );

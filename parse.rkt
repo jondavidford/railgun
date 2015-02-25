@@ -4,6 +4,7 @@
 (provide parse)
 (provide get-type)
 (provide get-output)
+(provide look-in-collection)
 
 (provide line)
 (provide return)

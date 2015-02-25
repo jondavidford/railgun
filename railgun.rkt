@@ -144,6 +144,7 @@ if(~a) {
     [(struct map-e (type output func collection))
      (define input (get-output collection))
      (define compiled-collection (compile-exp collection))
+     (define collection-class-string (make-collection-class-string (symbol->string type)))
      (set! functions 
            (string-append functions
                           (format #<<--
@@ -153,18 +154,31 @@ __global__ void map~a(~a* in, ~a* out)
 }
 --
                                   func
-                                  (make-collection-class-string (symbol->string type))
-                                  (make-collection-class-string (symbol->string type))
+                                  collection-class-string
+                                  collection-class-string
                                   func)))
      (format #<<--
 ~a
+~a* __device__~a = new ~a;
+__device__~a->count = ~a->count;
+__device__~a->elements = managedArray<~a>(~a->count);
+
 dim3 dimBlock( ~a->count, 1 );
 dim3 dimGrid( 1, 1 );
-map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
+map~a<<<dimGrid, dimBlock>>>(&~a, &__device__~a);
 --
              compiled-collection
+             collection-class-string
+             input
+             collection-class-string
+             input
+             input
+             input
+             (look-in-collection type)
+             input
              input
              func
+             input
              input)]
     ; PRINT EXPRESSION
     [(struct print-e (exp))
@@ -195,7 +209,7 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
     ; generate multiple lines of code that allocate an array for a collection
     [(struct collection (type output elements))
      (define collection-class-string (make-collection-class-string (symbol->string type)))
-     (define element-type (substring (symbol->string type) 1 (sub1 (string-length (symbol->string type)))))
+     (define element-type (look-in-collection type))
      (define count (length elements))
      (format #<<--
 ~a* ~a = new ~a;

@@ -148,7 +148,7 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
      (match (get-type exp)
        ['int (format "printf(\"%d\\n\", ~a)" compiled-exp)]
        ['float (format "printf(\"%f\\n\", ~a)" compiled-exp)]
-       ['bool (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\"" compiled-exp)])]
+       ['bool (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]
     [(struct return (exp))
      (format "return ~a;\n" (compile-exp exp))]
     [(struct funcall (type output name arguments))

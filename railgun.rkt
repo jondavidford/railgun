@@ -63,13 +63,14 @@ int main()
 
 (define (compile-exp expr)
   (match expr
-    ;use regexes to have "+ or - or * or % ...
+    ; ARITHMETIC OPERATION
     [(struct arith (type op arguments))
      (define infix 
        (apply string-append
               (map (λ (x) (format "~a ~a " x op))
                    (map compile-exp arguments))))
      (format "(~a)" (substring infix 0 (- (string-length infix) 3)))]
+    ; COMPARISON OPERATION
     [(struct comp (type op arguments))
      (format "(~a ~a ~a)"
              (compile-exp (first arguments))
@@ -77,6 +78,7 @@ int main()
                  "=="
                  op)
              (compile-exp (second arguments)))]
+    ; FUNCTION DEFINE
     [(struct deffun (name output arguments contract body))
      (define c-contract (map convert-type contract))
      (define arg-string
@@ -94,17 +96,35 @@ int main()
            (compile-exp (first body))
            (apply string-append
                   (map compile-exp body))))
+     ; format two copies of the function
+     ; one to run on host and one on device
      (define c-function (format #<<--
 ~a ~a(~a){
     ~a
 }
 --
-             (convert-type (last c-contract)) name formatted-arguments compiled-body))
+                                (convert-type (last c-contract))
+                                name 
+                                formatted-arguments 
+                                compiled-body))
+     (define device-function (format #<<--
+__device__ ~a device_~a(~a){
+    ~a
+}
+--
+                                     (convert-type (last c-contract))
+                                     name 
+                                     formatted-arguments 
+                                     compiled-body))
+     ; update the global function and device function variables
      (set! functions (string-append functions c-function))
-     (set! device-functions (string-append device-functions (format "__device__ ~a" c-function)))
-             ""]
+     (set! device-functions (string-append device-functions device-function))
+     ; return empty string since functions are pulled out to top level in C code
+     ""]
+    ; VARIABLE DEFINE
     [(struct defvar (vartype name expr))
      (format "~a ~a = ~a" (convert-type vartype) name (compile-exp expr))]
+    ; IF STATEMENT
     [(struct if-e (type output pred then else))
      (format #<<--
 if(~a) {
@@ -116,8 +136,11 @@ if(~a) {
       (compile-exp pred)
       (compile-exp then)
       (compile-exp else))]
+    ; LINE EXPRESSION
+    ; the parser thinks this expression can be translated into a single C line
     [(struct line (exp))
      (format "~a;\n" (compile-exp exp))]
+    ; MAP EXPRESSION
     [(struct map-e (type output func collection))
      (define input (get-output collection))
      (define compiled-collection (compile-exp collection))
@@ -143,14 +166,19 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
              input
              func
              input)]
+    ; PRINT EXPRESSION
     [(struct print-e (exp))
      (define compiled-exp (compile-exp exp))
      (match (get-type exp)
        ['int (format "printf(\"%d\\n\", ~a)" compiled-exp)]
        ['float (format "printf(\"%f\\n\", ~a)" compiled-exp)]
        ['bool (format "printf(\"%s\\n\", ~a ? \"#t\" : \"#f\")" compiled-exp)])]
+    ; RETURN EXPRESSION
+    ; the parser thinks this expression can be compiled into a single line
+    ; and that the line is a return statement in C
     [(struct return (exp))
      (format "return ~a;\n" (compile-exp exp))]
+    ; FUNCTION CALL
     [(struct funcall (type output name arguments))
      (define arg-string
        (apply string-append
@@ -160,7 +188,10 @@ map~a<<<dimGrid, dimBlock>>>(&~a, generatedOutput);
        (unless (empty? arguments)
          (substring arg-string 0 (- (string-length arg-string) 2))))
      (format "~a(~a)" name formatted-arguments)]
-    ;check for distinct argument name
+    ; note: check for distinct argument name?
+    
+    ; COLLECTION IMMEDIATE
+    ; generate multiple lines of code that allocate an array for a collection
     [(struct collection (type output elements))
      (define element-type (substring (symbol->string type) 1 (sub1 (string-length (symbol->string type)))))
      (define count (length elements))
@@ -186,6 +217,7 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
              output
              element-type
              count)]
+    ; IMMEDIATE VALUE
     [(struct immed (type val))
      (format "~a" val)]
     [x

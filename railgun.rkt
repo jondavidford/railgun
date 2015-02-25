@@ -149,7 +149,7 @@ if(~a) {
                           (format #<<--
 __global__ void map~a(Collection<~a>* in, Collection<~a>* out)
 {
-    out[threadIdx.x] = ~a(in[threadIdx.x]);
+    out.elements[threadIdx.x] = ~a(in.elements[threadIdx.x]);
 }
 --
                                   "func"
@@ -265,6 +265,11 @@ memcpy(~a->elements, ~aImmediate, sizeof(~a)*~a);
 
 (define equal-test `((print (= 1 1))
                      (print (= 1 0))))
+
+(define map-test `((define (func x)
+                     (-> int int)
+                     (+ x 1))
+                   (map func (collection (1 2 3 4 5)))))
 
 
 

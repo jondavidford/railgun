@@ -22,7 +22,7 @@
 
 (struct return (expr) #:transparent)
 (struct line (expr) #:transparent)
-(struct deffun (name output arguments contract body) #:transparent)
+(struct deffun (name arguments contract body) #:transparent)
 (struct defvar (name type expr) #:transparent)
 (struct cond-e (type output preds bodies) #:transparent)
 (struct if-e (type output red then else) #:transparent)
@@ -33,10 +33,11 @@
 (struct immed (type val) #:transparent)
 (struct print-e (argument) #:transparent)
 (struct collection (type output elements) #:transparent)
+(struct lambda-e (name arguments contract body) #:transparent)
 
 (define (get-type expr)
   (match expr
-    [(struct deffun (name output arguments contract body))
+    [(struct deffun (name arguments contract body))
      'void]
     [(struct defvar (vartype name expr))
      'void]
@@ -57,12 +58,14 @@
     [(struct print-e (argument))
      'void]
     [(struct collection (type output elements))
-     type]))
+     type]
+    [(struct lambda-e (name arguments contract body))
+     'void]))
 
 (define (get-output expr)
   (match expr
-    [(struct deffun (name output arguments contract body))
-     output]
+    [(struct deffun (name arguments contract body))
+     'void]
     [(struct defvar (vartype name expr))
      'void]
     [(struct cond-e (type output preds bodies))
@@ -82,12 +85,19 @@
     [(struct print-e (argument))
      'void]
     [(struct collection (type output elements))
-     output]))
+     output]
+    [(struct lambda-e (name arguments contract body))
+     'void]))
 
 (define output-counter 0)
 (define (generate-output prefix)
   (set! output-counter (add1 output-counter))
-  (string-append "output" (number->string output-counter)))
+  (string->symbol (string-append "output" (number->string output-counter))))
+
+(define lambda-counter 0)
+(define (generate-lambda)
+  (set! lambda-counter (add1 lambda-counter))
+  (string->symbol (string-append "lambda" (number->string lambda-counter))))
 
 (define (get-collection-type elements)
   (cond
@@ -135,6 +145,10 @@
         ;contract list length is args list length plus one
         (-> ,contract ...)
         ,body ...)
+     (map (lambda (name type) (nametype name type)) args (take contract (sub1 (length contract))))]
+    [`(lambda (,args ...) 
+               (-> ,contract ...)
+               ,body ...)
      (map (lambda (name type) (nametype name type)) args (take contract (sub1 (length contract))))]
     [`(define ,type ,var ,expr)
      `(,(nametype var type))]
@@ -203,7 +217,7 @@
      (unless (= (add1 (length args)) (length contract))
        (error 'type-error "contract length does not match function declaration"))
      (define parsed-function
-       (deffun func (generate-output "") args contract 
+       (deffun func args contract 
          (parse-type-body body 
                           (append (get-funcontext body) funcontext) 
                           (append (get-varcontext expr) varcontext))))
@@ -226,8 +240,13 @@
          (if-e (get-type typed-then) (generate-output "") typed-pred typed-then typed-else)
          (error 'type-error "if requires predicate to be a boolean expression"))]
     [`(map ,func ,collection)
+     ;; We assume single argument functions atm
      (define parsed-col (parse-type collection funcontext varcontext))
-     (define contract (namecontract-contract (get-namecontract func funcontext)))
+     (define parsed-func (parse-type func funcontext varcontext))
+     (define contract
+       (if (lambda-e? parsed-func)
+           (lambda-e-contract parsed-func)
+           (namecontract-contract (get-namecontract parsed-func funcontext varcontext) funcontext)))
      (define map-type (string->symbol (string-append "<" (symbol->string (second contract)) ">")))
      (if (eq? (first contract) (look-in-collection (get-type parsed-col)))
          (map-e map-type (generate-output "") func parsed-col)
@@ -237,6 +256,17 @@
      (print-e typed-arg)]
     [`(collection (,elements ...))
      (collection (get-collection-type elements) (generate-output "") elements)]
+    [`(lambda (,args ...) (-> ,contract ...) ,body ...)
+     (unless (= (add1 (length args)) (length contract))
+       (error 'type-error "contract length does not match lambda declaration"))
+     (define parsed-lambda
+       (lambda-e (generate-lambda) args contract 
+         (parse-type-body body 
+                          (append (get-funcontext body) funcontext) 
+                          (append (get-varcontext expr) varcontext))))
+     (unless (symbol=? (get-type (last (lambda-e-body parsed-lambda))) (last contract))
+       (error 'type-error "lambda return type does not match lambda contract"))
+     parsed-lambda]
     [`(,func ,operands ...)
      (funcall (last (namecontract-contract (get-namecontract func funcontext))) (generate-output "") func (map (lambda (x) (parse-type x funcontext varcontext)) operands))]
     [x
@@ -258,8 +288,8 @@
   (match expr
     [(struct cond-e (type output preds bodies))
      (cond-e type output preds (map (lambda (body) (parse-format-body body #f)) bodies))]
-    [(struct deffun (name output arguments contract body))
-     (deffun name output arguments contract (parse-format-body body #f))]
+    [(struct deffun (name arguments contract body))
+     (deffun name arguments contract (parse-format-body body #f))]
     [else (line expr)]))
 
 (define (parse-format-return expr)
@@ -358,12 +388,23 @@
 
 (check-error (get-type (parse-type `(collection (((12) (3) (43)) ((1) (2) (3) 4))) '() '())) "type-error: collection does not contain elements of the same type")
 
+(check-expect (get-type (parse-type `(define (func x) (-> int int) (+ x 1)) '() '())) 'void)
+
+(check-expect (get-type (parse-type `(lambda (x) (-> int int) (+ x 1)) '() '())) 'void)
+
+(test)
+
+(define lambda-test `((map (lambda (x) (-> int int) (+ x 1)) (collection (1 2 3 4 5)))))
 
 (define map-test `((define (func x)
                      (-> int int)
                      (+ x 1))
                    (print (map func (collection (1 2 3 4 5))))))
 
+(define func-test `((define (func x)
+                     (-> int int)
+                     (+ x 1))
+                    (func 1)))
 
 (define line-prog `((define (func a)
                  (-> int int)
